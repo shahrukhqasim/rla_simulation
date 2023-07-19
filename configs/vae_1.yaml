@@ -1,0 +1,32 @@
+model_params:
+  name: 'VanillaVAE'
+  in_channels: 3
+  latent_dim: 128
+
+
+exp_params:
+  adam_lr: 0.001
+  kld_weight: 0.00025
+  manual_seed: 1265
+
+trainer_params:
+  max_epochs: 1000
+
+logging_params:
+  save_dir: "logs/"
+  name: "VanillaVAE"
+
+data_params:
+  data_path: "data/training_LARGE.root"
+  train_batch_size: 512
+  val_batch_size:  64
+  num_workers: 1
+
+
+generate_params:
+  checkpoint_path: "/Users/shahrukhqasim/Workspace/UZH/rla_simulation/logs/VanillaVAE/version_68_testing/checkpoints/last.ckpt"
+  pdf_path: "/Users/shahrukhqasim/Workspace/UZH/rla_simulation/logs/VanillaVAE/version_68_testing/checkpoints/last_results.pdf"
+  total_samples: 20000
+  batch_size: 100
+  predict_batch_size: 200
+  kld_weight: 0.00025

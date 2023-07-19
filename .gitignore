@@ -1,0 +1,7 @@
+logs
+*.pdf
+lightning_logs
+data
+.idea
+.DS_Store
+*.pyc
