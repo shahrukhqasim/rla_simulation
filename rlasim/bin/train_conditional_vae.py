@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from tqdm import tqdm
 
-from rlasim.lib.networks import VanillaVae, BaseVAE
+from rlasim.lib.networks_conditional import MlpConditionalVAE, BaseVAE
 import torch
 import numpy as np
 import pytorch_lightning as pl
@@ -19,19 +19,20 @@ import os
 import matplotlib.pyplot as plt
 import argh
 
-from rlasim.lib.organise_data import VaeDataset
+from rlasim.lib.organise_data import VaeDataset, ThreeBodyDecayDataset
+from rlasim.lib.plotting import ThreeBodyDecayPlotter
 
 Tensor = TypeVar('torch.tensor')
 
-
-class VaeTrainingExperiment(pl.LightningModule):
+class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
     def __init__(self,
                  vae_model: BaseVAE,
-                 params: dict) -> None:
-        super(VaeTrainingExperiment, self).__init__()
+                 params: dict, plotter_params: dict) -> None:
+        super(ConditionalThreeBodyDecayVaeSimExperiment, self).__init__()
 
         self.model = vae_model
         self.params = params
+        self.plotter_params = plotter_params
         self.curr_device = None
 
         if 'checkpoint_path' in params.keys():
@@ -40,8 +41,8 @@ class VaeTrainingExperiment(pl.LightningModule):
             else:
                 self.load_state_dict(torch.load(params['checkpoint_path'])['state_dict'])
 
-    def forward(self, input: Tensor, **kwargs) -> Tensor:
-        x = self.model(input, **kwargs)
+    def forward(self, input: Tensor, condition: Tensor, **kwargs) -> Tensor:
+        x = self.model(input, condition, **kwargs)
         return x
 
 
@@ -68,96 +69,99 @@ class VaeTrainingExperiment(pl.LightningModule):
         # self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
-        batch = batch[0]
+        batch, condition = batch[0], batch[1]
         self.curr_device = batch.device
-
-        results = self.forward(batch)
+        preprocessor = self.trainer.datamodule.preprocessor
+        batch_pp, condition_pp = preprocessor(batch, condition)
+        results = self.forward(batch_pp, condition_pp)
         train_loss = self.model.loss_function(*results,
                                               M_N=self.params['kld_weight'],
                                               optimizer_idx=optimizer_idx,
                                               batch_idx=batch_idx)
+        # print(batch_idx, np.mean(batch_pp.cpu().numpy()), np.mean(condition_pp.cpu().numpy()), train_loss['loss_kld'], train_loss['loss_reco'])
 
         self.log_dict({key: val.item() for key, val in train_loss.items()}, sync_dist=True)
 
         return train_loss['loss']
 
+
+    def on_validation_start(self) -> None:
+        if self.current_epoch % int(self.params['validate_after_epochs']) != 0:
+            self.perform_validation=False
+            return
+
+        self.perform_validation=True
+        self.validation_results_dict = {
+            'true':[],
+            'reco':[],
+            'sampled':[],
+            'condition':[],
+        }
+
+
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        if batch_idx == 0:
-            batch = batch[0]
+        if self.perform_validation:
+            batch, condition = batch[0], batch[1]
             self.curr_device = batch.device
-            results = self.forward(batch)
-            val_loss = self.model.loss_function(*results,
+            preprocessor = self.trainer.datamodule.preprocessor
+            batch_pp, condition_pp = preprocessor(batch, condition)
+            output = self.forward(batch_pp, condition_pp)
+            val_loss = self.model.loss_function(*output,
                                                 M_N=1.0,  # real_img.shape[0]/ self.num_val_imgs,
                                                 optimizer_idx=optimizer_idx,
                                                 batch_idx=batch_idx)
 
             self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
+            batch_size = int(self.params['batch_size'])
+            sampled = self.model.sample(batch_size, self.curr_device, condition=condition_pp)
+
+            reconstructed = output[0]
+            print(reconstructed.shape, condition.shape)
+            reconstructed_upp, _ = preprocessor(reconstructed, condition, direction=-1)
+            sampled_upp, _ = preprocessor(sampled, condition, direction=-1)
+
+            self.validation_results_dict['condition'] += [condition]
+            self.validation_results_dict['true'] += [batch]
+            self.validation_results_dict['reco'] += [reconstructed_upp]
+            self.validation_results_dict['sampled'] += [sampled_upp]
+
+
     def on_validation_end(self) -> None:
-        if self.current_epoch % 10 == 0:
-            self.sample_data(N=100)
+        if not self.perform_validation:
+            return
+
+        condition = torch.concatenate(self.validation_results_dict['condition'], dim=0)
+        decays_true = torch.concatenate(self.validation_results_dict['true'], dim=0)
+        decays_reco = torch.concatenate(self.validation_results_dict['reco'], dim=0)
+        decays_sampled = torch.concatenate(self.validation_results_dict['sampled'], dim=0)
+
+        self.produce_pdf(decays_true, condition, str='true')
+        self.produce_pdf(decays_reco, condition, str='reco')
+        self.produce_pdf(decays_sampled, condition, str='sampled')
 
 
-    def produce_pdf(self, samples, log=False, str='samples', path = None, bins=50):
+        # if self.current_epoch % 10 == 0:
+        #     self.sample_data(N=100)
+
+
+    def produce_pdf(self, samples, samples_mother, log=False, str='samples', path = None, bins=50):
         try:
-            samples = torch.reshape(samples, (-1, 3, 3))
+            samples = torch.reshape(samples*1, (-1, 3, 3))
             samples = samples.cpu().numpy()
+            samples_mother = torch.reshape(samples_mother*1, (-1, 1, 3))
+            samples_mother = samples_mother.cpu().numpy()
 
             if path is None:
                 path = os.path.join(self.logger.log_dir,
-                                       str,
-                                       f"{self.logger.name}_Epoch_{self.current_epoch}.pdf")
-            indexing_dict = {0: 'x', 1: 'y', 2: 'z'}
-            with PdfPages(path) as pdf:
-                for particle in range(3):
-                    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-                    subplot_idx = 0
-                    for i in range(3):
-                        for j in range(i + 1, 3):
-                            strx = 'particle_%d_p%s (minmax norm.)' % (particle, indexing_dict[i])
-                            stry = 'particle_%d_p%s (minmax norm.)' % (particle, indexing_dict[j])
+                                       'samples',
+                                       f"{self.logger.name}_{str}_Epoch_{self.current_epoch}.pdf")
 
-                            if log:
-                                h = axes[subplot_idx].hist2d(samples[:, particle, i], samples[:, particle, j], bins=50,
-                                                             norm=LogNorm(),
-                                                             range=[[-1, 1], [-1, 1]])
-                            else:
-                                h = axes[subplot_idx].hist2d(samples[:, particle, i], samples[:, particle, j], bins=50,
-                                                             range=[[-1, 1], [-1, 1]])
-
-                            fig.colorbar(h[3], ax=axes[subplot_idx])
-                            axes[subplot_idx].set_xlabel(strx)
-                            axes[subplot_idx].set_ylabel(stry)
-                            subplot_idx += 1
-
-                    fig.tight_layout(pad=1.0)
-                    pdf.savefig()
-                    plt.close('all')
+                plotter = ThreeBodyDecayPlotter(**self.plotter_params)
+                plotter.plot(samples, samples_mother, path)
 
         except Warning:
             pass
-
-
-    def sample_data(self, N=15, path=None):
-        test_input = next(iter(self.trainer.datamodule.test_dataloader()))
-        test_input = test_input[0]
-        test_input = test_input.to(self.curr_device)
-
-        # samples = self.model.generate(test_input)
-        # # samples = samples[:, 0:9]
-        # # samples = test_input # Comment this out after checks
-        # self.produce_pdf(samples, log=False, str='samples')
-
-        batch_size = int(self.params['batch_size'])
-        all_samples = []
-        for i in tqdm(range(N)):
-            samples = self.model.sample(batch_size, self.curr_device)
-            all_samples += [samples]
-
-        all_samples = torch.concatenate(all_samples, dim=0)
-
-        self.produce_pdf(all_samples, log=True, str='gsamples', path=path)
-
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(),
@@ -167,10 +171,7 @@ class VaeTrainingExperiment(pl.LightningModule):
 
 
 
-def main(config_file='configs/vae_1.yaml', predict=False):
-    vae_network = VanillaVae()
-    vae_network(torch.Tensor(np.random.normal(0, 1, (100,9))))
-
+def main(config_file='configs/vae_conditional.yaml', predict=False):
     try:
         with open(config_file, 'r') as file:
             config = yaml.safe_load(file)
@@ -178,18 +179,17 @@ def main(config_file='configs/vae_1.yaml', predict=False):
         print(exc)
         exit()
 
-    print(config)
-    print(type(config))
+    data = ThreeBodyDecayDataset(**config["data_params"])
+    vae_network = MlpConditionalVAE(**config["network_params"])
 
-    data = VaeDataset(**config["data_params"])
 
     if predict:
-        experiment = VaeTrainingExperiment(vae_network, config['generate_params'])
+        experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['generate_params'])
         runner = Trainer()
         runner.predict(experiment, datamodule=data)
 
     else:
-        experiment = VaeTrainingExperiment(vae_network, config['exp_params'])
+        experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['exp_params'], config['plotter'])
         tb_logger = TensorBoardLogger(save_dir=config['logging_params']['save_dir'],
                                       name=config['model_params']['name'], )
         runner = Trainer(logger=tb_logger,

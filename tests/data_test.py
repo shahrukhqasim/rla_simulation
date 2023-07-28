@@ -72,11 +72,14 @@ import vector
 # dataset, preprocessors = data.get_data_simple('example_tree.root')
 # dataset, preprocessors = data.get_data_simple('training_LARGE.root')
 dataset, preprocessors = data.get_data_simple('data/example_tree.root')
-dataset.permutate_particle_number()
+# dataset.permutate_particle_number()
 
 
 momenta = dataset.get_data_i("momenta", mode="train").astype("float32")
 momenta_pp = dataset.get_data_i("momenta", mode="train", preprocessed=True).astype("float32")
+
+# print(np.sum((momenta-momenta_pp)))
+0/0
 
 # print(momenta.shape)
 # plt.hist(momenta_pp[:, :, 2])

@@ -5,3 +5,4 @@ data
 .idea
 .DS_Store
 *.pyc
+tests/private_tests
