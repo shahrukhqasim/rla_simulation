@@ -48,22 +48,53 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         self.curr_device = batch[0].device
-        # batch = batch[0]
-        #
-        # if batch_idx < 10:
-        #     self.curr_device = batch.device
-        #     results = self.forward(batch)
-        #     val_loss = self.model.loss_function(*results,
-        #                                         M_N=self.params['kld_weight'])
-        #
-        #     print(val_loss)
 
+        batch, condition = batch[0], batch[1]
+        self.curr_device = batch.device
+        preprocessor = self.trainer.datamodule.preprocessor
+        batch_pp, condition_pp = preprocessor(batch, condition)
+        output = self.forward(batch_pp, condition_pp)
+        sampled = self.model.sample(len(condition_pp), self.curr_device, condition=condition_pp)
+
+        reconstructed = output[0]
+        print(reconstructed.shape, condition.shape)
+        reconstructed_upp, _ = preprocessor(reconstructed, condition, direction=-1)
+        sampled_upp, _ = preprocessor(sampled, condition, direction=-1)
+
+        self.predict_results_dict['condition'] += [condition]
+        self.predict_results_dict['true'] += [batch]
+        self.predict_results_dict['reco'] += [reconstructed_upp]
+        self.predict_results_dict['sampled'] += [sampled_upp]
+
+
+    def on_predict_start(self) -> None:
+        self.predict_results_dict = {
+            'true':[],
+            'reco':[],
+            'sampled':[],
+            'condition':[],
+        }
 
     def on_predict_end(self) -> None:
-        N = int(int(self.params['total_samples']) / int(self.params['batch_size']))
+        condition = torch.concatenate(self.predict_results_dict['condition'], dim=0)
+        decays_true = torch.concatenate(self.predict_results_dict['true'], dim=0)
+        decays_reco = torch.concatenate(self.predict_results_dict['reco'], dim=0)
+        decays_sampled = torch.concatenate(self.predict_results_dict['sampled'], dim=0)
 
-        self.sample_data(N=N, path = self.params['pdf_path'])
+        self.produce_pdf(decays_true, condition, str='true', path=self.params['pdf_prefix']+'_true.pdf')
+        self.produce_pdf(decays_reco, condition, str='reco', path=self.params['pdf_prefix']+'_reco.pdf')
+        self.produce_pdf(decays_sampled, condition, str='sampled', path=self.params['pdf_prefix']+'_sampled.pdf')
 
+        preprocessor = self.trainer.datamodule.preprocessor
+        _, condition_pp = preprocessor(None, condition, direction=-1)
+
+        filt = condition[:, 0, 2] <1000
+
+        print(filt.shape, decays_true.shape, decays_reco.shape, condition.shape, decays_sampled.shape)
+        print(self.params['pdf_prefix']+'_true_pm_1000.pdf')
+        self.produce_pdf(decays_true[filt], condition[filt], str='true', path=self.params['pdf_prefix']+'_true_pm_1000.pdf')
+        self.produce_pdf(decays_reco[filt], condition[filt], str='reco', path=self.params['pdf_prefix']+'_reco_pm_1000.pdf')
+        self.produce_pdf(decays_sampled[filt], condition[filt], str='sampled', path=self.params['pdf_prefix']+'_sampled_pm_1000.pdf')
 
 
         # self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
@@ -113,11 +144,11 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
             self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
-            batch_size = int(self.params['batch_size'])
-            sampled = self.model.sample(batch_size, self.curr_device, condition=condition_pp)
+            sampled = self.model.sample(len(condition_pp), self.curr_device, condition=condition_pp)
 
             reconstructed = output[0]
             print(reconstructed.shape, condition.shape)
+
             reconstructed_upp, _ = preprocessor(reconstructed, condition, direction=-1)
             sampled_upp, _ = preprocessor(sampled, condition, direction=-1)
 
@@ -157,8 +188,8 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
                                        'samples',
                                        f"{self.logger.name}_{str}_Epoch_{self.current_epoch}.pdf")
 
-                plotter = ThreeBodyDecayPlotter(**self.plotter_params)
-                plotter.plot(samples, samples_mother, path)
+            plotter = ThreeBodyDecayPlotter(**self.plotter_params)
+            plotter.plot(samples, samples_mother, path)
 
         except Warning:
             pass
@@ -184,7 +215,7 @@ def main(config_file='configs/vae_conditional.yaml', predict=False):
 
 
     if predict:
-        experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['generate_params'])
+        experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['generate_params'], config['plotter'])
         runner = Trainer()
         runner.predict(experiment, datamodule=data)
 

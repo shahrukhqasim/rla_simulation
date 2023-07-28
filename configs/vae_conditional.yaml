@@ -8,7 +8,7 @@ exp_params:
   kld_weight: 0.00025
   manual_seed: 1265
   validate_after_epochs: 10
-  batch_size: 1024
+  batch_size: 512
 
 trainer_params:
   max_epochs: 1000
@@ -24,17 +24,17 @@ network_params:
 
 data_params:
   data_path: "data/training_LARGE.root"
-  train_batch_size: 1024
-  val_batch_size: 1024
-  num_workers: 1
+  train_batch_size: 512
+  val_batch_size: 512
+#  num_workers: 1
 
 
 generate_params:
-  checkpoint_path: "/Users/shahrukhqasim/Workspace/UZH/rla_simulation/logs/VanillaVAE/version_68_testing/checkpoints/last.ckpt"
-  pdf_path: "/Users/shahrukhqasim/Workspace/UZH/rla_simulation/logs/VanillaVAE/version_68_testing/checkpoints/last_results.pdf"
-  total_samples: 20000
-  batch_size: 1024
-  predict_batch_size: 1024
+  checkpoint_path: "logs/MlpConditionalVAE/version_63/checkpoints/last.ckpt"
+  pdf_prefix: "logs/MlpConditionalVAE/version_63/samples/gen_res"
+#  total_samples: 20000
+  batch_size: 512
+  predict_batch_size: 512
   kld_weight: 0.00025
 
 

@@ -1554,11 +1554,6 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module):
         self.max_mother = max_func(sample_mother_copy)
 
     def preprocess(self, sample, sample_mother):
-        sample = sample * 1.0
-        sample_mother = sample_mother * 1.0
-        sample[:, :, 2] = torch.log(sample[:, :, 2] + 5)
-        sample_mother[:, :, 2] = torch.log(sample_mother[:, :, 2] + 5)
-
         if sample.device != self.min_decay_prods.device:
             self.min_decay_prods = self.min_decay_prods.to(sample.device)
             self.max_decay_prods = self.max_decay_prods.to(sample.device)
@@ -1566,20 +1561,29 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module):
             self.min_mother = self.min_mother.to(sample.device)
             self.max_mother = self.max_mother.to(sample.device)
 
-        sample = ((sample - self.min_decay_prods) / (self.max_decay_prods - self.min_decay_prods)) * 2.0 - 1.0
-        sample_mother = ((sample_mother - self.min_mother) / (self.max_mother - self.min_mother)) * 2.0 - 1.0
+
+        if sample is not None:
+            sample = sample * 1.0
+            sample[:, :, 2] = torch.log(sample[:, :, 2] + 5)
+            sample = ((sample - self.min_decay_prods) / (self.max_decay_prods - self.min_decay_prods)) * 2.0 - 1.0
+
+        if sample_mother is not None:
+            sample_mother = sample_mother * 1.0
+            sample_mother[:, :, 2] = torch.log(sample_mother[:, :, 2] + 5)
+            sample_mother = ((sample_mother - self.min_mother) / (self.max_mother - self.min_mother)) * 2.0 - 1.0
 
         return sample, sample_mother
 
     def postprocess(self, sample, sample_mother):
-        sample = sample * 1
-        sample_mother = sample_mother * 1
+        if sample is not None:
+            sample = sample * 1
+            sample = (sample + 1) * 0.5 * (self.max_decay_prods - self.min_decay_prods) + self.min_decay_prods
+            sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
 
-        sample = (sample + 1) * 0.5 * (self.max_decay_prods - self.min_decay_prods) + self.min_decay_prods
-        sample_mother = (sample_mother + 1) * 0.5 * (self.max_mother - self.min_mother) + self.min_mother
-
-        sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
-        sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
+        if sample_mother is not None:
+            sample_mother = sample_mother * 1
+            sample_mother = (sample_mother + 1) * 0.5 * (self.max_mother - self.min_mother) + self.min_mother
+            sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
 
         return sample, sample_mother
 
