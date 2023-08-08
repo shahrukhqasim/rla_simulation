@@ -8,7 +8,7 @@ import torch
 from rlasim.lib.plotting import ThreeBodyDecayPlotter
 
 
-def main(config_file='configs/vae_conditional.yaml', predict=False):
+def main(config_file='configs/vae_conditional.yaml'):
     try:
         with open(config_file, 'r') as file:
             config = yaml.safe_load(file)
@@ -20,19 +20,12 @@ def main(config_file='configs/vae_conditional.yaml', predict=False):
     data.setup()
     loader = data.train_dataloader()
     all_data = []
-    all_data_mother = []
     for idx, batch in tqdm(enumerate(loader)):
-        all_data.append(batch[0])
-        all_data_mother.append(batch[1])
-
-    samples = torch.cat(all_data, dim=0)
-    samples_mother = torch.cat(all_data_mother, dim=0)
-
-    print(len(samples), len(all_data[0]))
+        all_data.append(batch)
 
     plotter = ThreeBodyDecayPlotter(**config['plotter'])
     params = config['plotter']
-    plotter.plot(samples, samples_mother, params['check_file'])
+    plotter.plot(all_data, params['check_file'])
 
 
 
