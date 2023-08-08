@@ -125,21 +125,23 @@ class MlpConditionalVAE(BaseVAE):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def forward(self, input: Tensor,condition: Tensor, **kwargs) -> List[Tensor]:
-        mu, log_var = self.encode(input, condition)
+    def forward(self, input: dict, **kwargs) -> dict:
+        features, condition = input['momenta_pp'], input['momenta_mother_pp']
+
+        mu, log_var = self.encode(features, condition)
         z = self.reparameterize(mu, log_var)
         decoded = self.decode(z, condition)
-        return [decoded, input, mu, log_var]
+
+        return {'momenta_reconstructed': decoded, 'features': features, 'mu': mu, 'log_var': log_var}
 
     def loss_function(self,
-                      *args,
+                      results:dict,
                       **kwargs) -> dict:
 
-        recons = args[0]
-        input = args[1]
-        mu = args[2]
-        log_var = args[3]
-
+        recons = results['momenta_reconstructed']
+        input = results['features']
+        mu = results['mu']
+        log_var = results['log_var']
 
 
         kld_weight = kwargs['M_N']  # Account for the minibatch samples from the dataset
@@ -163,7 +165,9 @@ class MlpConditionalVAE(BaseVAE):
 
     def sample(self,
                num_samples: int,
-               current_device: int, condition: Tensor, **kwargs) -> Tensor:
+               current_device: int, condition: dict, **kwargs) -> Tensor:
+
+        condition = condition['momenta_mother_pp']
 
         assert condition.shape[0] == num_samples
 
@@ -173,7 +177,7 @@ class MlpConditionalVAE(BaseVAE):
         z = z.to(current_device)
 
         samples = self.decode(z, condition)
-        return samples
+        return {'momenta_sampled': samples}
 
     def generate(self, x: Tensor, **kwargs) -> Tensor:
         return self.forward(x)[0]

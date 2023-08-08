@@ -1,3 +1,5 @@
+import gzip
+import pickle
 import time
 from pathlib import Path
 
@@ -19,7 +21,8 @@ import os
 import matplotlib.pyplot as plt
 import argh
 
-from rlasim.lib.organise_data import VaeDataset, ThreeBodyDecayDataset
+from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecayMomentaPreprocessor, PreProcessor, \
+    PostProcessor
 from rlasim.lib.plotting import ThreeBodyDecayPlotter
 
 Tensor = TypeVar('torch.tensor')
@@ -34,6 +37,7 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         self.params = params
         self.plotter_params = plotter_params
         self.curr_device = None
+        self.preprocessors = []
 
         if 'checkpoint_path' in params.keys():
             if not torch.cuda.is_available():
@@ -41,71 +45,98 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
             else:
                 self.load_state_dict(torch.load(params['checkpoint_path'])['state_dict'])
 
-    def forward(self, input: Tensor, condition: Tensor, **kwargs) -> Tensor:
-        x = self.model(input, condition, **kwargs)
+    def forward(self, input: dict, **kwargs) -> Tensor:
+        x = self.model(input, **kwargs)
         return x
 
-
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
-        self.curr_device = batch[0].device
+        assert type(batch) is dict
 
-        batch, condition = batch[0], batch[1]
-        self.curr_device = batch.device
-        preprocessor = self.trainer.datamodule.preprocessor
-        batch_pp, condition_pp = preprocessor(batch, condition)
-        output = self.forward(batch_pp, condition_pp)
-        sampled = self.model.sample(len(condition_pp), self.curr_device, condition=condition_pp)
+        self.curr_device = list(batch.values())[0].device
 
-        reconstructed = output[0]
-        print(reconstructed.shape, condition.shape)
-        reconstructed_upp, _ = preprocessor(reconstructed, condition, direction=-1)
-        sampled_upp, _ = preprocessor(sampled, condition, direction=-1)
+        batch_2 = {}
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PreProcessor):
+                batch_2.update(preprocessor(batch))
+        batch_2.update(batch)
 
-        self.predict_results_dict['condition'] += [condition]
-        self.predict_results_dict['true'] += [batch]
-        self.predict_results_dict['reco'] += [reconstructed_upp]
-        self.predict_results_dict['sampled'] += [sampled_upp]
+        output = self.forward(batch_2)
+
+        # The code will find the momenta_mother_pp as the condition -- dicts are always easier to manage
+        sampled = self.model.sample(len( list(batch.values())[0]), self.curr_device, condition=batch_2)
+
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PostProcessor):
+                batch_2.update(preprocessor(sampled, direction=-1, on='sampled'))
+                batch_2.update(preprocessor(output, direction=-1, on='reconstructed'))
+        batch_2.update(batch)
+
+        self.prediction_results += [batch_2]
 
 
     def on_predict_start(self) -> None:
-        self.predict_results_dict = {
-            'true':[],
-            'reco':[],
-            'sampled':[],
-            'condition':[],
-        }
+        self.setup_preprocessors()
+        self.prediction_results = []
 
     def on_predict_end(self) -> None:
-        condition = torch.concatenate(self.predict_results_dict['condition'], dim=0)
-        decays_true = torch.concatenate(self.predict_results_dict['true'], dim=0)
-        decays_reco = torch.concatenate(self.predict_results_dict['reco'], dim=0)
-        decays_sampled = torch.concatenate(self.predict_results_dict['sampled'], dim=0)
+        with gzip.open('dump.bin', 'wb') as f:
+            pickle.dump(self.prediction_results, f)
+            print("Dumped into dump.bin")
 
-        self.produce_pdf(decays_true, condition, str='true', path=self.params['pdf_prefix']+'_true.pdf')
-        self.produce_pdf(decays_reco, condition, str='reco', path=self.params['pdf_prefix']+'_reco.pdf')
-        self.produce_pdf(decays_sampled, condition, str='sampled', path=self.params['pdf_prefix']+'_sampled.pdf')
+        self.produce_pdf(self.prediction_results, str='results', path=self.params['pdf_prefix']+'_results.pdf')
 
-        preprocessor = self.trainer.datamodule.preprocessor
-        _, condition_pp = preprocessor(None, condition, direction=-1)
-
-        filt = condition[:, 0, 2] <1000
-
-        print(filt.shape, decays_true.shape, decays_reco.shape, condition.shape, decays_sampled.shape)
-        print(self.params['pdf_prefix']+'_true_pm_1000.pdf')
-        self.produce_pdf(decays_true[filt], condition[filt], str='true', path=self.params['pdf_prefix']+'_true_pm_1000.pdf')
-        self.produce_pdf(decays_reco[filt], condition[filt], str='reco', path=self.params['pdf_prefix']+'_reco_pm_1000.pdf')
-        self.produce_pdf(decays_sampled[filt], condition[filt], str='sampled', path=self.params['pdf_prefix']+'_sampled_pm_1000.pdf')
+        # condition = torch.concatenate(self.predict_results_dict['condition'], dim=0)
+        # decays_true = torch.concatenate(self.predict_results_dict['true'], dim=0)
+        # decays_reco = torch.concatenate(self.predict_results_dict['reco'], dim=0)
+        # decays_sampled = torch.concatenate(self.predict_results_dict['sampled'], dim=0)
+        #
+        # self.produce_pdf(decays_true, condition, str='true', path=self.params['pdf_prefix']+'_true.pdf')
+        # self.produce_pdf(decays_reco, condition, str='reco', path=self.params['pdf_prefix']+'_reco.pdf')
+        # self.produce_pdf(decays_sampled, condition, str='sampled', path=self.params['pdf_prefix']+'_sampled.pdf')
+        #
+        # preprocessor = self.trainer.datamodule.preprocessor
+        # _, condition_pp = preprocessor(None, condition, direction=-1)
+        #
+        # filt = condition[:, 0, 2] <1000
+        #
+        # print(filt.shape, decays_true.shape, decays_reco.shape, condition.shape, decays_sampled.shape)
+        # print(self.params['pdf_prefix']+'_true_pm_1000.pdf')
+        # self.produce_pdf(decays_true[filt], condition[filt], str='true', path=self.params['pdf_prefix']+'_true_pm_1000.pdf')
+        # self.produce_pdf(decays_reco[filt], condition[filt], str='reco', path=self.params['pdf_prefix']+'_reco_pm_1000.pdf')
+        # self.produce_pdf(decays_sampled[filt], condition[filt], str='sampled', path=self.params['pdf_prefix']+'_sampled_pm_1000.pdf')
 
 
         # self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
+    def setup_preprocessors(self):
+        if len(self.preprocessors) > 0:
+            return
+
+        loader = self.trainer.datamodule.train_dataloader()
+        all_data = []
+        self.preprocessors = []
+        for idx, batch in enumerate(loader):
+            all_data.append(batch)
+        self.preprocessors.append(OnlineThreeBodyDecayMomentaPreprocessor(all_data))
+
+        print("X", len(self.preprocessors))
+
+
+    def on_train_start(self) -> None:
+        self.setup_preprocessors()
+
     def training_step(self, batch, batch_idx, optimizer_idx=0):
-        batch, condition = batch[0], batch[1]
-        self.curr_device = batch.device
-        preprocessor = self.trainer.datamodule.preprocessor
-        batch_pp, condition_pp = preprocessor(batch, condition)
-        results = self.forward(batch_pp, condition_pp)
-        train_loss = self.model.loss_function(*results,
+        assert type(batch) is dict
+        self.curr_device = list(batch.values())[0].device
+
+        batch_2 = {}
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PreProcessor):
+                batch_2.update(preprocessor(batch))
+        batch_2.update(batch)
+
+        results = self.forward(batch_2)
+        train_loss = self.model.loss_function(results,
                                               M_N=self.params['kld_weight'],
                                               optimizer_idx=optimizer_idx,
                                               batch_idx=batch_idx)
@@ -117,79 +148,50 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
 
     def on_validation_start(self) -> None:
-        if self.current_epoch % int(self.params['validate_after_epochs']) != 0:
-            self.perform_validation=False
-            return
-
-        self.perform_validation=True
-        self.validation_results_dict = {
-            'true':[],
-            'reco':[],
-            'sampled':[],
-            'condition':[],
-        }
-
+        self.setup_preprocessors()
+        self.validation_results = []
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        if self.perform_validation:
-            batch, condition = batch[0], batch[1]
-            self.curr_device = batch.device
-            preprocessor = self.trainer.datamodule.preprocessor
-            batch_pp, condition_pp = preprocessor(batch, condition)
-            output = self.forward(batch_pp, condition_pp)
-            val_loss = self.model.loss_function(*output,
-                                                M_N=1.0,  # real_img.shape[0]/ self.num_val_imgs,
-                                                optimizer_idx=optimizer_idx,
-                                                batch_idx=batch_idx)
+        self.curr_device = list(batch.values())[0].device
 
-            self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
+        batch_2 = {}
+        print(self.preprocessors)
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PreProcessor):
+                batch_2.update(preprocessor(batch))
+        batch_2.update(batch)
 
-            sampled = self.model.sample(len(condition_pp), self.curr_device, condition=condition_pp)
+        output = self.forward(batch_2)
+        val_loss = self.model.loss_function(output,
+                                            M_N=1.0,  # real_img.shape[0]/ self.num_val_imgs,
+                                            optimizer_idx=optimizer_idx,
+                                            batch_idx=batch_idx)
 
-            reconstructed = output[0]
-            print(reconstructed.shape, condition.shape)
+        self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
-            reconstructed_upp, _ = preprocessor(reconstructed, condition, direction=-1)
-            sampled_upp, _ = preprocessor(sampled, condition, direction=-1)
+        # The code will find the momenta_mother_pp as the condition -- dicts are always easier to manage
+        sampled = self.model.sample(len(list(batch.values())[0]), self.curr_device, condition=batch_2)
 
-            self.validation_results_dict['condition'] += [condition]
-            self.validation_results_dict['true'] += [batch]
-            self.validation_results_dict['reco'] += [reconstructed_upp]
-            self.validation_results_dict['sampled'] += [sampled_upp]
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PostProcessor):
+                batch_2.update(preprocessor(sampled, direction=-1, on='sampled'))
+                batch_2.update(preprocessor(output, direction=-1, on='reconstructed'))
+        batch_2.update(batch)
+
+        self.validation_results += [batch_2]
 
 
     def on_validation_end(self) -> None:
-        if not self.perform_validation:
-            return
+        self.produce_pdf(self.validation_results, str='results')
 
-        condition = torch.concatenate(self.validation_results_dict['condition'], dim=0)
-        decays_true = torch.concatenate(self.validation_results_dict['true'], dim=0)
-        decays_reco = torch.concatenate(self.validation_results_dict['reco'], dim=0)
-        decays_sampled = torch.concatenate(self.validation_results_dict['sampled'], dim=0)
-
-        self.produce_pdf(decays_true, condition, str='true')
-        self.produce_pdf(decays_reco, condition, str='reco')
-        self.produce_pdf(decays_sampled, condition, str='sampled')
-
-
-        # if self.current_epoch % 10 == 0:
-        #     self.sample_data(N=100)
-
-
-    def produce_pdf(self, samples, samples_mother, log=False, str='samples', path = None, bins=50):
+    def produce_pdf(self, samples, str='samples', path = None):
         try:
-            samples = torch.reshape(samples*1, (-1, 3, 3))
-            samples = samples.cpu().numpy()
-            samples_mother = torch.reshape(samples_mother*1, (-1, 1, 3))
-            samples_mother = samples_mother.cpu().numpy()
-
             if path is None:
                 path = os.path.join(self.logger.log_dir,
                                        'samples',
                                        f"{self.logger.name}_{str}_Epoch_{self.current_epoch}.pdf")
-
             plotter = ThreeBodyDecayPlotter(**self.plotter_params)
-            plotter.plot(samples, samples_mother, path)
+            plotter.plot(samples, path)
 
         except Warning:
             pass
