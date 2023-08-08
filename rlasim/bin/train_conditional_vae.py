@@ -79,10 +79,6 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         self.prediction_results = []
 
     def on_predict_end(self) -> None:
-        with gzip.open('dump.bin', 'wb') as f:
-            pickle.dump(self.prediction_results, f)
-            print("Dumped into dump.bin")
-
         self.produce_pdf(self.prediction_results, str='results', path=self.params['pdf_prefix']+'_results.pdf')
 
         # condition = torch.concatenate(self.predict_results_dict['condition'], dim=0)
