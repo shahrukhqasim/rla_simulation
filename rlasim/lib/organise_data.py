@@ -13,178 +13,10 @@ from sklearn.preprocessing import QuantileTransformer
 from itertools import permutations
 from typing import List, Optional, Sequence, Union, Any, Callable
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 from torch import nn
 
-
-class DatasetAndLabels():
-    def __init__(self, name, train_test_split=0.8, randomise=True):
-        self.name = name
-        self.dataset = {}
-        self.dataset_pp = {}
-        self.dataset_classes = {}
-        self.data_idx = 0
-        self.label_idx = 0
-        self.dims = 0
-        self.train_test_split = train_test_split
-        self.randomise = randomise
-
-    def add_data(self, data_string, dataset_i):
-        if not isinstance(dataset_i, np.ndarray):
-            raise Exception("Dataset object must be np.array")
-        if self.data_idx != 0 and self.dims != np.shape(dataset_i)[0]:
-            raise Exception(
-                f"Dataset object has wrong length in first dimension, {np.shape(dataset_i)}, length expected {self.dims}")
-
-        if self.data_idx == 0:
-            self.dims = np.shape(dataset_i)[0]
-            self.idx = np.arange(0, self.dims)
-            split_at = int(self.train_test_split * self.dims)
-            if self.randomise:
-                rand_idx = self.idx.copy()
-                np.random.shuffle(rand_idx)
-                self.training_idxes = rand_idx[:split_at]
-                self.testing_idxes = rand_idx[split_at:]
-            else:
-                self.training_idxes = rand_idx[:split_at]
-                self.testing_idxes = rand_idx[split_at:]
-            training_labels = np.concatenate((np.ones(split_at), np.zeros(self.dims - split_at)))
-            training_idxes = np.concatenate((self.training_idxes, self.testing_idxes))
-            order_idxs = training_idxes.argsort()
-            self.training_labels = training_labels[order_idxs]
-
-        elif self.dims != np.shape(dataset_i)[0]:
-            raise Exception(
-                f"Datset object has wrong length in first dimension, {np.shape(dataset_i)}, length expected {self.dims}")
-
-        print(f"Adding dataset {data_string} (shape {np.shape(dataset_i)}) to {self.name}")
-
-        self.dataset[data_string] = dataset_i
-        self.dataset_pp[data_string] = dataset_i
-        self.dataset_classes[data_string] = "dataset"
-        self.data_idx += 1
-
-    def add_label(self, label_string, label_i):
-
-        if self.dims == 0:
-            raise Exception("use add_data first")
-        if not isinstance(label_i, np.ndarray):
-            raise Exception("Label object must be np.array")
-        if self.dims != np.shape(label_i)[0]:
-            raise Exception(
-                f"Label object has wrong length in first dimension, {np.shape(label_i)}, length expected {self.dims}")
-
-        print(f"Adding label {label_string} (shape {np.shape(label_i)}) to {self.name}")
-
-        self.dataset[label_string] = label_i
-        self.dataset_pp[label_string] = label_i
-        self.dataset_classes[label_string] = "label"
-        self.label_idx += 1
-
-    def get_keys(self, labels=None):
-
-        if labels == None:
-            return list(self.dataset.keys())
-        if labels:
-            out = []
-            for key in list(self.dataset.keys()):
-                if self.dataset_classes[key] == 'label': out.append(key)
-            return out
-        else:
-            out = []
-            for key in list(self.dataset.keys()):
-                if self.dataset_classes[key] == 'dataset': out.append(key)
-            return out
-
-    def get_data(self, mode=None, preprocessed=False):
-        if mode == 'train':
-            where = np.where(self.training_labels == 1.)
-        elif mode == 'test':
-            where = np.where(self.training_labels != 1.)
-        else:
-            where = self.idx
-        out = {}
-        for key in list(self.dataset.keys()):
-            if preprocessed:
-                out[key] = self.dataset_pp[key][where]
-            else:
-                out[key] = self.dataset[key][where]
-        return out
-
-    def get_data_i(self, key, mode=None, preprocessed=False):
-        if mode == 'train':
-            where = np.where(self.training_labels == 1.)
-        elif mode == 'test':
-            where = np.where(self.training_labels != 1.)
-        else:
-            where = self.idx
-        if preprocessed:
-            return self.dataset_pp[key][where]
-        else:
-            return self.dataset[key][where]
-
-    def update_preprocess_i(self, key, new_array):
-        self.dataset_pp[key] = new_array
-
-    def shuffle(self):
-        shuffle_idx = self.idx.copy()
-        np.random.shuffle(shuffle_idx)
-        self.shuffled_array = self.idx[shuffle_idx]
-
-        self.training_labels = self.training_labels[shuffle_idx]
-        for key in list(self.dataset.keys()):
-            self.dataset[key] = self.dataset[key][shuffle_idx]
-            self.dataset_pp[key] = self.dataset_pp[key][shuffle_idx]
-
-    def permutate_particle_number(self):
-
-        shuffle_idx = self.idx.copy()
-
-        a = np.array([0, 1, 2])
-        perms = np.empty((0, np.shape(a)[0]))
-
-        for perm in set(permutations(a)):
-            perm = np.expand_dims(np.asarray(perm), 0).astype(int)
-            perms = np.append(perms, perm, axis=0)
-        n_groups = np.shape(perms)[0]
-
-        print(perms, n_groups)
-        choice = np.random.choice(np.arange(n_groups), size=np.shape(shuffle_idx)[0], replace=True)
-
-        for key in list(self.dataset.keys()):
-
-            print('permutate_particle_number:', key)
-            # print(np.shape(self.dataset[key]))
-            if np.shape(self.dataset[key])[1] == 3:
-                for n_group in range(n_groups):
-                    perm = perms[n_group]
-                    where = np.where(choice == n_group)
-
-                    in_array_where = self.dataset[key][where]
-                    in_array_where_permed = in_array_where.copy()
-
-                    in_array_where_permed[:, 0] = in_array_where[:, int(perm[0])]
-                    in_array_where_permed[:, 1] = in_array_where[:, int(perm[1])]
-                    in_array_where_permed[:, 2] = in_array_where[:, int(perm[2])]
-
-                    self.dataset[key][where] = in_array_where_permed
-
-                    in_array_where = self.dataset_pp[key][where]
-                    in_array_where_permed = in_array_where.copy()
-
-                    in_array_where_permed[:, 0] = in_array_where[:, int(perm[0])]
-                    in_array_where_permed[:, 1] = in_array_where[:, int(perm[1])]
-                    in_array_where_permed[:, 2] = in_array_where[:, int(perm[2])]
-
-                    self.dataset_pp[key][where] = in_array_where_permed
-
-    def reset_indexes(self):
-        reset_idxs = self.shuffled_array.argsort()
-
-        self.training_labels = self.training_labels[reset_idxs]
-        for key in list(self.dataset.keys()):
-            self.dataset[key] = self.dataset[key][reset_idxs]
-            self.dataset_pp[key] = self.dataset_pp[key][reset_idxs]
+from rlasim.lib.data_core import DictTensorDataset, tensors_dict_join
 
 
 def rotation_matrix_from_vectors_vectorised(vec1, vec2):
@@ -241,9 +73,6 @@ def rot_vectorised(vec, mat):
     return vec
 
     reshaped = np.asarray([[training_parameters["B_phi"], training_parameters["B_theta"], training_parameters["B_P"]]])
-
-
-(80000, 1, 3)
 
 
 class B_angles_preprocessor():
@@ -718,495 +547,6 @@ class B_properties_preprocessor():
         return dataset_out
 
 
-def get_data(file):
-    file = uproot.open(file)["DecayTree"]
-    keys = file.keys()
-    results = file.arrays(keys, library="np")
-    results = pd.DataFrame.from_dict(results)
-
-    shape = np.shape(results)
-
-    training_parameters = {}
-
-    pe_1 = np.sqrt(
-        results.particle_1_M ** 2 + results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2)
-    pe_2 = np.sqrt(
-        results.particle_2_M ** 2 + results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2)
-    pe_3 = np.sqrt(
-        results.particle_3_M ** 2 + results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2)
-    pe = pe_1 + pe_2 + pe_3
-    px = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
-    py = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
-    pz = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
-
-
-    B = vector.obj(px=px, py=py, pz=pz, E=pe)
-
-    Bmass = np.sqrt(B.E ** 2 - B.px ** 2 - B.py ** 2 - B.pz ** 2)
-
-    B_pt = np.sqrt(B.px ** 2 + B.py ** 2)
-    training_parameters["B_pt"] = B_pt
-    B_phi = np.arctan2(B.py, B.px)
-    training_parameters["B_phi"] = B_phi
-    training_parameters["B_px"] = B.px
-    training_parameters["B_py"] = B.py
-    training_parameters["B_pz"] = B.pz
-    B_p = np.sqrt(B.px ** 2 + B.py ** 2 + B.pz ** 2)
-    training_parameters["B_P"] = B_p
-
-    P1 = vector.obj(px=results.particle_1_PX, py=results.particle_1_PY, pz=results.particle_1_PZ,
-                    E=results.particle_1_E)
-    P2 = vector.obj(px=results.particle_2_PX, py=results.particle_2_PY, pz=results.particle_2_PZ,
-                    E=results.particle_2_E)
-    P3 = vector.obj(px=results.particle_3_PX, py=results.particle_3_PY, pz=results.particle_3_PZ,
-                    E=results.particle_3_E)
-
-    P1_CoM = P1.boost_beta3(-B.to_beta3())
-    P2_CoM = P2.boost_beta3(-B.to_beta3())
-    P3_CoM = P3.boost_beta3(-B.to_beta3())
-
-    P1_CoM_vec = np.swapaxes(norm(np.asarray([P1_CoM.px, P1_CoM.py, P1_CoM.pz])), 0, 1)
-    P2_CoM_vec = np.swapaxes(norm(np.asarray([P2_CoM.px, P2_CoM.py, P2_CoM.pz])), 0, 1)
-    P3_CoM_vec = np.swapaxes(norm(np.asarray([P3_CoM.px, P3_CoM.py, P3_CoM.pz])), 0, 1)
-    all_pz = np.swapaxes(
-        norm(np.asarray([np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), np.ones((np.shape(Bmass)))])), 0, 1)
-    ROT_matrix_CoM = rotation_matrix_from_vectors_vectorised(P1_CoM_vec, all_pz)
-
-    P1_CoM_vec = [P1_CoM.px, P1_CoM.py, P1_CoM.pz]
-    P2_CoM_vec = [P2_CoM.px, P2_CoM.py, P2_CoM.pz]
-    P3_CoM_vec = [P3_CoM.px, P3_CoM.py, P3_CoM.pz]
-    P1_CoM_vec_ROT = rot_vectorised(P1_CoM_vec, ROT_matrix_CoM)
-    P2_CoM_vec_ROT = rot_vectorised(P2_CoM_vec, ROT_matrix_CoM)
-    P3_CoM_vec_ROT = rot_vectorised(P3_CoM_vec, ROT_matrix_CoM)
-
-    E = np.sqrt(results.particle_1_M ** 2 + P1_CoM_vec_ROT[0] ** 2 + P1_CoM_vec_ROT[1] ** 2 + P1_CoM_vec_ROT[2] ** 2)
-    P1_CoM = vector.obj(px=P1_CoM_vec_ROT[0], py=P1_CoM_vec_ROT[1], pz=P1_CoM_vec_ROT[2], E=E)
-
-    E = np.sqrt(results.particle_2_M ** 2 + P2_CoM_vec_ROT[0] ** 2 + P2_CoM_vec_ROT[1] ** 2 + P2_CoM_vec_ROT[2] ** 2)
-    P2_CoM = vector.obj(px=P2_CoM_vec_ROT[0], py=P2_CoM_vec_ROT[1], pz=P2_CoM_vec_ROT[2], E=E)
-
-    E = np.sqrt(results.particle_3_M ** 2 + P3_CoM_vec_ROT[0] ** 2 + P3_CoM_vec_ROT[1] ** 2 + P3_CoM_vec_ROT[2] ** 2)
-    P3_CoM = vector.obj(px=P3_CoM_vec_ROT[0], py=P3_CoM_vec_ROT[1], pz=P3_CoM_vec_ROT[2], E=E)
-
-    P1_theta = np.arctan2(P1_CoM.py, P1_CoM.px)
-    P1_phi = np.arctan2(P1_CoM.px, P1_CoM.pz)
-    P1_p = np.sqrt(P1_CoM.px ** 2 + P1_CoM.py ** 2 + P1_CoM.pz ** 2)
-
-    P2_theta = np.arctan2(P2_CoM.py, P2_CoM.px)
-    P2_phi = np.arctan2(P2_CoM.px, P2_CoM.pz)
-    P2_p = np.sqrt(P2_CoM.px ** 2 + P2_CoM.py ** 2 + P2_CoM.pz ** 2)
-
-    P3_theta = np.arctan2(P3_CoM.py, P3_CoM.px)
-    P3_phi = np.arctan2(P3_CoM.px, P3_CoM.pz)
-    P3_p = np.sqrt(P3_CoM.px ** 2 + P3_CoM.py ** 2 + P3_CoM.pz ** 2)
-
-    training_parameters["phi_P2"] = P2_phi  # -P1_phi
-    training_parameters["phi_P3"] = P3_phi  # -P1_phi
-
-    training_parameters["theta_P2"] = P2_theta  # -P1_theta
-    training_parameters["theta_P3"] = P3_theta  # -P1_theta
-
-    training_parameters["mom_CoM_P1"] = P1_p
-    training_parameters["mom_CoM_P2"] = P2_p
-    training_parameters["mom_CoM_P3"] = P3_p
-
-    # training_parameters["P1_p"] = P1_p
-    # training_parameters["P2_px"] = P2_CoM_vec_ROT[0]
-    # training_parameters["P2_py"] = P2_CoM_vec_ROT[1]
-    # training_parameters["P2_pz"] = P2_CoM_vec_ROT[2]
-    # training_parameters["P3_px"] = P3_CoM_vec_ROT[0]
-    # training_parameters["P3_py"] = P3_CoM_vec_ROT[1]
-    # training_parameters["P3_pz"] = P3_CoM_vec_ROT[2]
-
-    training_samples = DatasetAndLabels("dataset")
-
-    # reshaped = [training_parameters["B_pt"],training_parameters["B_phi"],training_parameters["B_px"],training_parameters["B_py"],training_parameters["B_pz"],training_parameters["B_P"]]
-    reshaped = [training_parameters["B_pt"], training_parameters["B_phi"], training_parameters["B_pz"]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    training_samples.add_data("B_properties", reshaped)
-
-    reshaped = [training_parameters["phi_P2"], training_parameters["theta_P2"], training_parameters["phi_P3"],
-                training_parameters["theta_P3"]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    training_samples.add_data("CoM_angles", reshaped)
-
-    # reshaped = [training_parameters["P1_p"],training_parameters["P2_px"],training_parameters["P2_py"],training_parameters["P2_pz"],training_parameters["P3_px"],training_parameters["P3_py"],training_parameters["P3_pz"]]
-    # reshaped = np.swapaxes(np.asarray(reshaped),0,1)
-    # training_samples.add_data("CoM_momenta", reshaped)
-
-    reshaped = [training_parameters["mom_CoM_P1"], training_parameters["mom_CoM_P2"], training_parameters["mom_CoM_P3"]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    training_samples.add_data("CoM_momenta", reshaped)
-
-    training_samples.add_data("mass_P1", np.asarray(results.particle_1_M))
-    training_samples.add_data("mass_P2", np.asarray(results.particle_2_M))
-    training_samples.add_data("mass_P3", np.asarray(results.particle_3_M))
-    reshaped = [results.particle_1_M, results.particle_2_M, results.particle_3_M]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    training_samples.add_data("masses", reshaped)
-
-    _B_properties_preprocessor = B_properties_preprocessor([training_samples.get_data_i("B_properties")])
-    training_samples.update_preprocess_i("B_properties", _B_properties_preprocessor.preprocess(
-        training_samples.get_data_i("B_properties")))
-
-    _CoM_angles_preprocessor = CoM_angles_preprocessor(training_samples.get_data_i("CoM_angles"))
-    training_samples.update_preprocess_i("CoM_angles",
-                                         _CoM_angles_preprocessor.preprocess(training_samples.get_data_i("CoM_angles")))
-
-    _CoM_momenta_preprocessor = CoM_momenta_preprocessor(training_samples.get_data_i("CoM_momenta"))
-    training_samples.update_preprocess_i("CoM_momenta", _CoM_momenta_preprocessor.preprocess(
-        training_samples.get_data_i("CoM_momenta")))
-
-    preprocessors = {}
-    preprocessors["B_properties"] = _B_properties_preprocessor
-    preprocessors["CoM_angles"] = _CoM_angles_preprocessor
-    preprocessors["CoM_momenta"] = _CoM_momenta_preprocessor
-
-    return training_samples, preprocessors
-
-
-def get_data_simple(file):
-    file = uproot.open(file)["DecayTree"]
-    keys = file.keys()
-    results = file.arrays(keys, library="np")
-    results = pd.DataFrame.from_dict(results)
-
-    mother_P = np.sqrt(results.mother_PX**2+results.mother_PY**2+results.mother_PZ**2)
-    mother_P_true = np.sqrt(results.mother_PX_TRUE**2+results.mother_PY_TRUE**2+results.mother_PZ_TRUE**2)
-
-
-    shape = np.shape(results)
-    training_parameters = {}
-
-    pe_1 = np.sqrt(
-        results.particle_1_M ** 2 + results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2)
-    pe_2 = np.sqrt(
-        results.particle_2_M ** 2 + results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2)
-    pe_3 = np.sqrt(
-        results.particle_3_M ** 2 + results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2)
-
-    pe = pe_1 + pe_2 + pe_3
-    px = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
-    py = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
-    pz = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
-
-
-    B = vector.obj(px=px, py=py, pz=pz, E=pe)
-
-    Bmass = np.sqrt(B.E ** 2 - B.px ** 2 - B.py ** 2 - B.pz ** 2)
-
-    B_phi = np.arctan2(B.py, B.px)
-    training_parameters["B_phi"] = B_phi
-    B_theta = np.arctan2(B.px, B.pz)
-    training_parameters["B_theta"] = B_theta
-    B_p = np.sqrt(B.px ** 2 + B.py ** 2 + B.pz ** 2)
-    training_parameters["B_P"] = B_p
-
-    B_vec = np.swapaxes(norm(np.asarray([B.px, B.py, B.pz])), 0, 1)
-
-    all_pz = np.swapaxes(
-        norm(np.asarray([np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), np.ones((np.shape(Bmass)))])), 0, 1)
-
-    ROT_matrix = rotation_matrix_from_vectors_vectorised(B_vec, all_pz)
-
-    P1 = vector.obj(px=results.particle_1_PX, py=results.particle_1_PY, pz=results.particle_1_PZ,
-                    E=results.particle_1_E)
-    P2 = vector.obj(px=results.particle_2_PX, py=results.particle_2_PY, pz=results.particle_2_PZ,
-                    E=results.particle_2_E)
-    P3 = vector.obj(px=results.particle_3_PX, py=results.particle_3_PY, pz=results.particle_3_PZ,
-                    E=results.particle_3_E)
-    PM= vector.obj(px=results.mother_PX_TRUE, py=results.mother_PY_TRUE, pz=results.mother_PZ_TRUE, E=results.mother_E_TRUE)
-
-
-
-    P1_vec = [P1.px, P1.py, P1.pz]
-    P2_vec = [P2.px, P2.py, P2.pz]
-    P3_vec = [P3.px, P3.py, P3.pz]
-    PM_vec = [PM.px, PM.py, PM.pz]
-
-
-    P1_vec_ROT = rot_vectorised(P1_vec, ROT_matrix)
-    P2_vec_ROT = rot_vectorised(P2_vec, ROT_matrix)
-    P3_vec_ROT = rot_vectorised(P3_vec, ROT_matrix)
-    PM_vec_ROT = rot_vectorised(PM_vec, ROT_matrix)
-
-    E = np.sqrt(results.particle_1_M ** 2 + P1_vec_ROT[0] ** 2 + P1_vec_ROT[1] ** 2 + P1_vec_ROT[2] ** 2)
-    P1_ROT = vector.obj(px=P1_vec_ROT[0], py=P1_vec_ROT[1], pz=P1_vec_ROT[2], E=E)
-
-    E = np.sqrt(results.particle_2_M ** 2 + P2_vec_ROT[0] ** 2 + P2_vec_ROT[1] ** 2 + P2_vec_ROT[2] ** 2)
-    P2_ROT = vector.obj(px=P2_vec_ROT[0], py=P2_vec_ROT[1], pz=P2_vec_ROT[2], E=E)
-
-    E = np.sqrt(results.particle_3_M ** 2 + P3_vec_ROT[0] ** 2 + P3_vec_ROT[1] ** 2 + P3_vec_ROT[2] ** 2)
-    P3_ROT = vector.obj(px=P3_vec_ROT[0], py=P3_vec_ROT[1], pz=P3_vec_ROT[2], E=E)
-
-
-    E = np.sqrt(results.particle_3_M ** 2 + PM_vec_ROT[0] ** 2 + PM_vec_ROT[1] ** 2 + PM_vec_ROT[2] ** 2)
-    PM_ROT = vector.obj(px=PM_vec_ROT[0], py=PM_vec_ROT[1], pz=PM_vec_ROT[2], E=E)
-
-    training_parameters["P1_px"] = P1_ROT.px
-    training_parameters["P1_py"] = P1_ROT.py
-    training_parameters["P1_pz"] = P1_ROT.pz
-    training_parameters["P2_px"] = P2_ROT.px
-    training_parameters["P2_py"] = P2_ROT.py
-    training_parameters["P2_pz"] = P2_ROT.pz
-    training_parameters["P3_px"] = P3_ROT.px
-    training_parameters["P3_py"] = P3_ROT.py
-    training_parameters["P3_pz"] = P3_ROT.pz
-
-    training_parameters["PM_px"] = PM_ROT.px
-    training_parameters["PM_py"] = PM_ROT.py
-    training_parameters["PM_pz"] = PM_ROT.pz
-
-    # pe_1 = np.sqrt(results.particle_1_M**2 + P1_ROT.px**2 + P1_ROT.py**2 + P1_ROT.pz**2)
-    # pe_2 = np.sqrt(results.particle_2_M**2 + P2_ROT.px**2 + P2_ROT.py**2 + P2_ROT.pz**2)
-    # pe_3 = np.sqrt(results.particle_3_M**2 + P3_ROT.px**2 + P3_ROT.py**2 + P3_ROT.pz**2)
-    # pe = pe_1 + pe_2 + pe_3
-    # px = P1_ROT.px + P2_ROT.px + P3_ROT.px
-    # py = P1_ROT.py + P2_ROT.py + P3_ROT.py
-    # pz = P1_ROT.pz + P2_ROT.pz + P3_ROT.pz
-    # mass = np.sqrt(pe**2 - px**2 - py**2 - pz**2)
-    # print(mass)
-
-    # pe_1 = np.sqrt(results.particle_1_M**2 + P1.px**2 + P1.py**2 + P1.pz**2)
-    # pe_2 = np.sqrt(results.particle_2_M**2 + P2.px**2 + P2.py**2 + P2.pz**2)
-    # pe_3 = np.sqrt(results.particle_3_M**2 + P3.px**2 + P3.py**2 + P3.pz**2)
-    # pe = pe_1 + pe_2 + pe_3
-    # px = P1.px + P2.px + P3.px
-    # py = P1.py + P2.py + P3.py
-    # pz = P1.pz + P2.pz + P3.pz
-    # mass = np.sqrt(pe**2 - px**2 - py**2 - pz**2)
-    # print(mass)
-
-    # quit()
-
-    training_samples = DatasetAndLabels("dataset")
-
-    reshaped = np.asarray([[training_parameters["P1_px"], training_parameters["P1_py"], training_parameters["P1_pz"]],
-                           [training_parameters["P2_px"], training_parameters["P2_py"], training_parameters["P2_pz"]],
-                           [training_parameters["P3_px"], training_parameters["P3_py"], training_parameters["P3_pz"]]])
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-    training_samples.add_data("momenta", reshaped)
-
-
-    reshaped = np.asarray([[training_parameters["PM_px"], training_parameters["PM_py"], training_parameters["PM_pz"]]])
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-    training_samples.add_data("mother_momenta", reshaped)
-
-    reshaped = np.asarray([[training_parameters["B_phi"], training_parameters["B_theta"], training_parameters["B_P"]]])
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-    training_samples.add_data("B_angles", reshaped)
-
-    _momenta_preprocessor = MomentaPreprocessor(training_samples.get_data_i("momenta"), training_samples.get_data_i("momenta_mother"))
-    training_samples.update_preprocess_i("momenta",
-                                         _momenta_preprocessor.preprocess(training_samples.get_data_i("momenta")))
-    training_samples.update_preprocess_i("mother_momenta",
-                                         _momenta_preprocessor.preprocess(training_samples.get_data_i("mother_momenta")))
-
-    _B_angles_preprocessor = B_angles_preprocessor(training_samples.get_data_i("B_angles"))
-    training_samples.update_preprocess_i("B_angles",
-                                         _B_angles_preprocessor.preprocess(training_samples.get_data_i("B_angles")))
-
-    reshaped = [results.particle_1_M, results.particle_2_M, results.particle_3_M]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
-    reshaped = np.expand_dims(reshaped, 2)
-    training_samples.add_data("masses", reshaped)
-
-    preprocessors = {}
-
-    preprocessors["momenta"] = _momenta_preprocessor
-    preprocessors["B_angles"] = _B_angles_preprocessor
-
-    return training_samples, preprocessors
-
-    '''
-    random_phi = np.random.uniform(low=-math.pi,high=math.pi, size=(np.shape(Bmass)))
-    random_theta = np.random.uniform(low=-math.pi,high=math.pi, size=(np.shape(Bmass)))
-
-    rot_pz = np.ones((np.shape(Bmass)))
-    rot_py = rot_pz*np.tan(random_phi)*np.tan(random_theta)
-    rot_px = rot_py*(1./np.tan(random_theta))
-
-    all_pz = np.swapaxes(norm(np.asarray([np.zeros((np.shape(Bmass))),np.zeros((np.shape(Bmass))),np.ones((np.shape(Bmass)))])),0,1)
-    rot_vec = np.swapaxes(norm(np.asarray([rot_px, rot_py, rot_pz])),0,1)
-    ROT_matrix_random = rotation_matrix_from_vectors_vectorised(all_pz, rot_vec)
-
-    P1_vec = [np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), P1_p]
-    P1_vec_ROT = rot_vectorised(P1_vec, ROT_matrix_random)
-    # P1_vec_ROT = P1_vec
-
-    E = np.sqrt(results.particle_1_M**2 + P1_vec_ROT[0]**2 + P1_vec_ROT[1]**2 + P1_vec_ROT[2]**2)
-    P1 = vector.obj(px=P1_vec_ROT[0], py=P1_vec_ROT[1], pz=P1_vec_ROT[2], E=E) 
-
-
-    angles = np.swapaxes(np.asarray([training_parameters["phi_P2"], training_parameters["theta_P2"], training_parameters["phi_P3"], training_parameters["theta_P3"]]),0,1)
-
-    sign_pz_P2 = np.ones(np.shape(Bmass))
-    sign_pz_P3 = np.ones(np.shape(Bmass))
-
-    where = np.where((angles[:,0]<0)&(angles[:,2]>math.pi/2.)&(angles[:,0]>-math.pi/2.))
-    sign_pz_P2[where[0]] *= -1.
-    where = np.where((angles[:,0]>0)&(angles[:,2]<-math.pi/2.)&(angles[:,0]<math.pi/2.))
-    sign_pz_P2[where[0]] *= -1.
-
-    where = np.where((angles[:,0]<0)&(angles[:,2]<math.pi/2.)&(angles[:,0]<-math.pi/2.))
-    sign_pz_P3[where[0]] *= -1.
-    where = np.where((angles[:,0]>0)&(angles[:,2]>-math.pi/2.)&(angles[:,0]>math.pi/2.))
-    sign_pz_P3[where[0]] *= -1.
-
-    ##### 
-
-    rot_pz = sign_pz_P2*np.ones((np.shape(Bmass)))
-    rot_py = rot_pz*np.tan(angles[:,0])*np.tan(angles[:,1])
-    rot_px = rot_py*(1./np.tan(angles[:,1]))
-
-    all_pz = np.swapaxes(norm(np.asarray([np.zeros((np.shape(Bmass))),np.zeros((np.shape(Bmass))),np.ones((np.shape(Bmass)))])),0,1)
-    rot_vec = np.swapaxes(norm(np.asarray([rot_px, rot_py, rot_pz])),0,1)
-    ROT_matrix_P2 = rotation_matrix_from_vectors_vectorised(all_pz, rot_vec)
-
-    P2_vec = [np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), P2_p]
-    P2_vec_ROT = rot_vectorised(-rot_vectorised(P2_vec, ROT_matrix_P2), ROT_matrix_random)
-    # P2_vec_ROT = rot_vectorised(P2_vec, ROT_matrix_P2)
-
-    E = np.sqrt(results.particle_2_M**2 + P2_vec_ROT[0]**2 + P2_vec_ROT[1]**2 + P2_vec_ROT[2]**2)
-    P2 = vector.obj(px=P2_vec_ROT[0], py=P2_vec_ROT[1], pz=P2_vec_ROT[2], E=E) 
-
-    ##### 
-
-    rot_pz = sign_pz_P3*np.ones((np.shape(Bmass)))
-    rot_py = rot_pz*np.tan(angles[:,2])*np.tan(angles[:,3])
-    rot_px = rot_py*(1./np.tan(angles[:,3]))
-
-    all_pz = np.swapaxes(norm(np.asarray([np.zeros((np.shape(Bmass))),np.zeros((np.shape(Bmass))),np.ones((np.shape(Bmass)))])),0,1)
-    rot_vec = np.swapaxes(norm(np.asarray([rot_px, rot_py, rot_pz])),0,1)
-    ROT_matrix_P3 = rotation_matrix_from_vectors_vectorised(all_pz, rot_vec)
-
-    P3_vec = [np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), P3_p]
-    P3_vec_ROT = rot_vectorised(-rot_vectorised(P3_vec, ROT_matrix_P3), ROT_matrix_random)
-    # P3_vec_ROT = rot_vectorised(P3_vec, ROT_matrix_P3)
-
-    E = np.sqrt(results.particle_3_M**2 + P3_vec_ROT[0]**2 + P3_vec_ROT[1]**2 + P3_vec_ROT[2]**2)
-    P3 = vector.obj(px=P3_vec_ROT[0], py=P3_vec_ROT[1], pz=P3_vec_ROT[2], E=E) 
-
-
-    P1 = P1.boost_beta3(B.to_beta3())
-    P2 = P2.boost_beta3(B.to_beta3())
-    P3 = P3.boost_beta3(B.to_beta3())
-
-
-    pe = P1.E + P2.E + P3.E
-    px = P1.px + P2.px + P3.px
-    py = P1.py + P2.py + P3.py
-    pz = P1.pz + P2.pz + P3.pz
-    B = vector.obj(px=px, py=py, pz=pz, E=pe)
-    Bmass = np.sqrt(B.E**2 - B.px**2 - B.py**2 - B.pz**2)
-    '''
-
-    training_samples = DatasetAndLabels("dataset")
-
-    pe_1 = np.sqrt(
-        results.particle_1_M ** 2 + results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2)
-    pe_2 = np.sqrt(
-        results.particle_2_M ** 2 + results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2)
-    pe_3 = np.sqrt(
-        results.particle_3_M ** 2 + results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2)
-    pe = pe_1 + pe_2 + pe_3
-    px = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
-    py = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
-    pz = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
-    Bmass = np.sqrt(pe ** 2 - px ** 2 - py ** 2 - pz ** 2)
-
-    pe = pe_1 + pe_2
-    px = results.particle_1_PX + results.particle_2_PX
-    py = results.particle_1_PY + results.particle_2_PY
-    pz = results.particle_1_PZ + results.particle_2_PZ
-    mass_12 = np.sqrt(pe ** 2 - px ** 2 - py ** 2 - pz ** 2)
-
-    pe = pe_1 + pe_3
-    px = results.particle_1_PX + results.particle_3_PX
-    py = results.particle_1_PY + results.particle_3_PY
-    pz = results.particle_1_PZ + results.particle_3_PZ
-    mass_13 = np.sqrt(pe ** 2 - px ** 2 - py ** 2 - pz ** 2)
-
-    pe = pe_2 + pe_3
-    px = results.particle_2_PX + results.particle_3_PX
-    py = results.particle_2_PY + results.particle_3_PY
-    pz = results.particle_2_PZ + results.particle_3_PZ
-    mass_23 = np.sqrt(pe ** 2 - px ** 2 - py ** 2 - pz ** 2)
-
-    B_momenta_PX = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
-    B_momenta_PY = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
-    B_momenta_PZ = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
-
-    frac_1 = np.sqrt(results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2) / (
-        np.sqrt(B_momenta_PX ** 2 + B_momenta_PY ** 2 + B_momenta_PZ ** 2))
-
-    frac_2 = np.sqrt(results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2) / (
-        np.sqrt(B_momenta_PX ** 2 + B_momenta_PY ** 2 + B_momenta_PZ ** 2))
-
-    frac_3 = np.sqrt(results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2) / (
-        np.sqrt(B_momenta_PX ** 2 + B_momenta_PY ** 2 + B_momenta_PZ ** 2))
-
-    B_momenta_PT = np.sqrt(B_momenta_PX ** 2 + B_momenta_PY ** 2)
-    B_momenta_P = np.sqrt(B_momenta_PX ** 2 + B_momenta_PY ** 2 + B_momenta_PZ ** 2)
-
-    frac_pt = B_momenta_PT / B_momenta_P
-
-    auxiliary_variables = np.swapaxes(np.asarray([Bmass, mass_12, mass_13, mass_23, frac_1, frac_2, frac_3, frac_pt]),
-                                      0, 1)
-
-    reshaped = [[results.particle_1_PX, results.particle_2_PX, results.particle_3_PX],
-                [results.particle_1_PY, results.particle_2_PY, results.particle_3_PY],
-                [results.particle_1_PZ, results.particle_2_PZ, results.particle_3_PZ]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-
-    training_samples.add_data("daughter_momenta", reshaped)
-
-    reshaped = [[results.particle_1_M_TRUE, results.particle_2_M_TRUE, results.particle_3_M_TRUE]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-
-    training_samples.add_label("daughter_masses", reshaped)
-
-    reshaped = [[results.mother_M_TRUE]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-
-    training_samples.add_label("mother_masses", reshaped)
-
-    reshaped = [[results.mother_PX_TRUE],
-                [results.mother_PY_TRUE],
-                [results.mother_PZ_TRUE]]
-    reshaped = np.swapaxes(np.asarray(reshaped), 0, 2)
-
-    training_samples.add_label("mother_momentum", reshaped)
-
-    training_samples.add_label("auxiliary_variables", auxiliary_variables)
-
-    # training_samples.update_preprocess_i("daughter_momenta", preprocess(training_samples.get_data_i("daughter_momenta")))
-
-    # print(training_samples.get_data_i("daughter_momenta",mode='train')[0])
-    # print(training_samples.get_data_i("daughter_momenta",mode='train',preprocessed=True)[0])
-    # quit()
-    _momentum_preprocessor = momentum_preprocessor(
-        [training_samples.get_data_i("daughter_momenta"), training_samples.get_data_i("mother_momentum")])
-    training_samples.update_preprocess_i("daughter_momenta", _momentum_preprocessor.preprocess(
-        training_samples.get_data_i("daughter_momenta")))
-    training_samples.update_preprocess_i("mother_momentum", _momentum_preprocessor.preprocess(
-        training_samples.get_data_i("mother_momentum")))
-
-    _auxilary_preprocessor = auxilary_preprocessor(auxiliary_variables)
-
-    training_samples.update_preprocess_i("auxiliary_variables", _auxilary_preprocessor.preprocess(
-        training_samples.get_data_i("auxiliary_variables")))
-
-    preprocessors = {}
-    preprocessors["momentum"] = _momentum_preprocessor
-    preprocessors["aux"] = _auxilary_preprocessor
-
-    return training_samples, preprocessors
-
-
 class auxilary_preprocessor():
 
     def __init__(self, samples):
@@ -1335,54 +675,6 @@ class momentum_preprocessor():
         return dataset_out
 
 
-def get_proccessing_limits(dataset=None, plotting=False):
-    if plotting:
-        try:
-            rd.processing_limits_plotting = rd.processing_limits
-        except:
-            pass
-
-    try:
-        return rd.processing_limits
-    except:
-        processing_limits = {}
-        processing_limits['px'] = {}
-        processing_limits['py'] = {}
-        processing_limits['pz'] = {}
-
-        dataset_copy = dataset.copy()
-        dataset_copy[:, :, 2] = dataset_copy[:, :, 2] + 5
-        dataset_copy[:, :, 2] = np.log(dataset_copy[:, :, 2])
-
-        for i, particle_i in enumerate([1, 2, 3]):
-            for j, mom in enumerate(['px', 'py', 'pz']):
-                mom_min = np.amin(dataset_copy[:, i, j])
-                mom_max = np.amax(dataset_copy[:, i, j])
-                if mom in ['px', 'py']:
-                    if np.abs(mom_min) > np.abs(mom_max):
-                        mom_max = np.abs(mom_min)
-                    else:
-                        mom_min = -1. * mom_max
-                try:
-                    if processing_limits[mom]['min'] > mom_min: processing_limits[mom]['min'] = mom_min
-                    if processing_limits[mom]['max'] < mom_max: processing_limits[mom]['max'] = mom_max
-                except:
-                    processing_limits[mom]['min'] = mom_min
-                    processing_limits[mom]['max'] = mom_max
-
-        for j, mom in enumerate(['px', 'py', 'pz']):
-            processing_limits[mom]['min'] *= 1.1
-            processing_limits[mom]['max'] *= 1.1
-
-        if plotting:
-            rd.processing_limits_plotting = processing_limits
-            return
-
-        rd.processing_limits = processing_limits
-
-        return rd.processing_limits
-
-
 def preprocess(dataset_i, processing_limits):
     # get_proccessing_limits(dataset, plotting=True)
 
@@ -1424,102 +716,63 @@ def postprocess(dataset_i, processing_limits):
 
     return dataset_out
 
+class PreProcessor():
+    pass
 
-class VaeDataset(LightningDataModule):
-    def __init__(
-            self,
-            data_path: str,
-            train_batch_size: int = 8,
-            val_batch_size: int = 8,
-            num_workers: int = 0,
-            pin_memory: bool = True,
-            **kwargs,
-    ):
-        super().__init__()
+class PostProcessor():
+    pass
 
-        self.data_path = data_path
-        self.train_batch_size = train_batch_size
-        self.val_batch_size = val_batch_size
-        self.num_workers = num_workers
-        self.pin_memory = pin_memory
-
-    def setup(self, stage: Optional[str] = None) -> None:
-        dataset, preprocessors = get_data_simple(self.data_path)
-        dataset.permutate_particle_number()
-
-        train_momenta_pp = dataset.get_data_i("momenta", mode="train", preprocessed=True).astype("float32")
-        train_mother_momenta_pp = dataset.get_data_i("momenta_mother", mode="train", preprocessed=True).astype("float32")
-
-        test_momenta_pp = dataset.get_data_i("momenta", mode="test", preprocessed=True).astype("float32")
-        test_mother_momenta_pp = dataset.get_data_i("momenta_mother", mode="test", preprocessed=True).astype("float32")
-
-        train_momenta_pp = np.reshape(train_momenta_pp, (-1, 9))
-        train_mother_momenta_pp = np.reshape(train_mother_momenta_pp, (-1, 3))
-
-        test_momenta_pp = np.reshape(test_momenta_pp, (-1, 9))
-        test_mother_momenta_pp = np.reshape(test_mother_momenta_pp, (-1, 3))
-
-        self.dataset_train = TensorDataset(torch.Tensor(train_momenta_pp), torch.Tensor(train_mother_momenta_pp))
-        self.dataset_test = TensorDataset(torch.Tensor(test_momenta_pp), torch.Tensor(test_mother_momenta_pp))
-
-
-
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.dataset_train,
-            batch_size=self.train_batch_size,
-            num_workers=self.num_workers,
-            shuffle=True,
-            pin_memory=self.pin_memory,
-        )
-
-    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
-
-    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=144,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
-
-    def predict_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=100,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
-
-
-
-class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module):
-    def __init__(self, estimation_sample, estimation_sample_mother):
+class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProcessor):
+    def __init__(self, estimation_sample):
         super(OnlineThreeBodyDecayMomentaPreprocessor, self).__init__()
-        self.limits = self.get_limits_from_samples(estimation_sample, estimation_sample_mother)
+        if type(estimation_sample) is list:
+            estimation_sample = tensors_dict_join(estimation_sample)
+        self.get_limits_from_samples(estimation_sample['momenta'], estimation_sample['momenta_mother'])
 
 
-    def forward(self, sample, sample_mother, direction=1):
+    def forward(self, sample: dict, direction=1, on=None):
         """
-
-        :param data: tuple: sample, sample_mother
+        :param data: dict
         :param direction: 1 if forward, -1 if reverse
+        :param on: only for postprocessing, 'sampled' for postprocessing sampled, 'reconstructed' for postprocessing
+                   reconstructed output
         :return:
         """
 
+        assert type(sample) is dict
+
         if direction == 1:
-            return self.preprocess(sample, sample_mother)
+            momenta_preprocessed, momenta_mother_preprocessed = self.preprocess(sample['momenta'], sample['momenta_mother'])
+            return {
+                'momenta_pp': momenta_preprocessed,
+                'momenta_mother_pp': momenta_mother_preprocessed,
+            }
         elif direction == -1:
-            return self.postprocess(sample, sample_mother)
+            if on is None:
+                key_momenta = 'momenta'
+                key_momenta_mother = 'momenta_mother'
+                key_upp_momenta = 'momenta_upp'
+                key_upp_momenta_mother = 'momenta_mother_upp'
+            elif on == 'sampled':
+                key_momenta = 'momenta_sampled'
+                key_momenta_mother = None
+                key_upp_momenta = 'momenta_sampled_upp'
+                key_upp_momenta_mother = None
+            elif on == 'reconstructed':
+                key_momenta = 'momenta_reconstructed'
+                key_momenta_mother = None
+                key_upp_momenta = 'momenta_reconstructed_upp'
+                key_upp_momenta_mother = None
+            else:
+                raise ValueError('Illegal value of on')
+
+            momenta_unpreprocessed, momenta_mother_unpreprocessed =  self.postprocess(sample[key_momenta], sample[key_momenta_mother] if key_momenta_mother is not None else None)
+            result_dict = {
+                key_upp_momenta: momenta_unpreprocessed
+            }
+            if momenta_mother_unpreprocessed is not None:
+                result_dict[key_upp_momenta_mother] = momenta_mother_unpreprocessed
+            return result_dict
         else:
             raise ValueError('Direction value invalid.')
 
@@ -1606,10 +859,12 @@ class ThreeBodyDecayDataset(LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.train_test_split = train_test_split
+        self.preprocessors = []
 
     def get_data_simple(self, file):
         file = uproot.open(file)["DecayTree"]
         keys = file.keys()
+
         results = file.arrays(keys, library="np")
         results = pd.DataFrame.from_dict(results)
 
@@ -1718,18 +973,19 @@ class ThreeBodyDecayDataset(LightningDataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         momenta, momenta_mother = self.get_data_simple(self.data_path)
 
-        split_at = int(self.train_test_split * momenta.shape[0])
+        # full_dataset = Dataset({
+        #     'momenta': torch.Tensor(momenta),
+        #     'momenta_mother': torch.tensor(momenta_mother)}
+        # )
 
-        momenta_train, momenta_test = self.split(momenta, split_at)
-        momenta_mother_train, momenta_mother_test = self.split(momenta_mother, split_at)
+        full_dataset = DictTensorDataset({
+            'momenta': torch.Tensor(momenta),
+            'momenta_mother': torch.Tensor(momenta_mother)
+        })
+        train_size = int(0.8 * len(full_dataset))
+        test_size = len(full_dataset) - train_size
 
-        momenta_train, momenta_test = torch.Tensor(momenta_train), torch.Tensor(momenta_test)
-        momenta_mother_train, momenta_mother_test = torch.Tensor(momenta_mother_train), torch.Tensor(momenta_mother_test)
-
-        self.dataset_train = TensorDataset(momenta_train, momenta_mother_train)
-        self.dataset_test = TensorDataset(momenta_test, momenta_mother_test)
-
-        self.preprocessor = OnlineThreeBodyDecayMomentaPreprocessor(momenta_train, momenta_mother_train)
+        self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size])
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

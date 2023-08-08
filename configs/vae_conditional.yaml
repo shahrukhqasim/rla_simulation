@@ -7,11 +7,11 @@ exp_params:
   adam_lr: 0.001
   kld_weight: 0.00025
   manual_seed: 1265
-  validate_after_epochs: 10
   batch_size: 512
 
 trainer_params:
   max_epochs: 1000
+  check_val_every_n_epoch: 10
 
 logging_params:
   save_dir: "logs/"
@@ -23,7 +23,8 @@ network_params:
   conditional_dim: [1, 3]
 
 data_params:
-  data_path: "data/training_LARGE.root"
+#  data_path: "data/training_LARGE.root"
+  data_path: "data/training_LARGE_multiparts_alpha.root"
   train_batch_size: 512
   val_batch_size: 512
 #  num_workers: 1
