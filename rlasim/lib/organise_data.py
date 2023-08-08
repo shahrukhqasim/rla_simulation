@@ -963,7 +963,19 @@ class ThreeBodyDecayDataset(LightningDataModule):
         reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
         momenta_mother = np.swapaxes(np.asarray(reshaped), 0, 2)
 
-        return momenta, momenta_mother
+        results_dict = {
+            'momenta': momenta,
+            'momenta_mother': momenta_mother,
+            'pdgid_mother': results.mother_PID.to_numpy(),
+            'pdgid_particle_1': results.particle_1_PID.to_numpy(),
+            'pdgid_particle_2': results.particle_2_PID.to_numpy(),
+            'pdgid_particle_3': results.particle_3_PID.to_numpy(),
+            'mass_particle_1': results.particle_1_M_TRUE.to_numpy(),
+            'mass_particle_2': results.particle_2_M_TRUE.to_numpy(),
+            'mass_particle_3': results.particle_3_M_TRUE.to_numpy(),
+        }
+
+        return results_dict
 
 
     def split(self, data, split_at):
@@ -971,17 +983,14 @@ class ThreeBodyDecayDataset(LightningDataModule):
 
 
     def setup(self, stage: Optional[str] = None) -> None:
-        momenta, momenta_mother = self.get_data_simple(self.data_path)
+        results_dict = self.get_data_simple(self.data_path)
 
         # full_dataset = Dataset({
         #     'momenta': torch.Tensor(momenta),
         #     'momenta_mother': torch.tensor(momenta_mother)}
         # )
 
-        full_dataset = DictTensorDataset({
-            'momenta': torch.Tensor(momenta),
-            'momenta_mother': torch.Tensor(momenta_mother)
-        })
+        full_dataset = DictTensorDataset({k:torch.Tensor(v) for k,v in results_dict.items()})
         train_size = int(0.8 * len(full_dataset))
         test_size = len(full_dataset) - train_size
 

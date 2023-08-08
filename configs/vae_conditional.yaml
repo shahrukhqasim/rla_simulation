@@ -40,7 +40,7 @@ generate_params:
 
 
 plotter:
-  check_file: 'logs/data_check.pdf'
+  check_file_prefix: 'logs/plotter_checks/data_check'
   ranges:
     px_min: -3
     px_max: 3
@@ -49,3 +49,6 @@ plotter:
     pz_min: -5
     pz_max: 5000
   unit: '[GeV]'
+  conditions: [
+    '{momenta_mother}[:,0,2] < 1000',
+  ]

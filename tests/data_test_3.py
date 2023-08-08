@@ -16,6 +16,8 @@ def main(config_file='configs/vae_conditional.yaml'):
         print(exc)
         exit()
 
+
+    plotter = ThreeBodyDecayPlotter(**config['plotter'])
     data = ThreeBodyDecayDataset(**config["data_params"])
     data.setup()
     loader = data.train_dataloader()
@@ -23,9 +25,8 @@ def main(config_file='configs/vae_conditional.yaml'):
     for idx, batch in tqdm(enumerate(loader)):
         all_data.append(batch)
 
-    plotter = ThreeBodyDecayPlotter(**config['plotter'])
     params = config['plotter']
-    plotter.plot(all_data, params['check_file'])
+    plotter.plot(all_data, params['check_file_prefix'])
 
 
 
