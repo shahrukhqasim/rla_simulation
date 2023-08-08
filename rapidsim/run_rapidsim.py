@@ -103,11 +103,10 @@ for particle_m in mother_particles:
         results = file.arrays(keys, library="np")
         file.close()
 
-        results['mother_pid'] =  np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_m+'+']
-        results['particle_1_pid'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_i+'+']
-        results['particle_2_pid'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_j+'+']
-        results['particle_3_pid'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_k+'-']
-
+        results['mother_PID'] =  np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_m+'+']
+        results['particle_1_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_i+'+']
+        results['particle_2_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_j+'+']
+        results['particle_3_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + particles_pid[particle_k+'-']
 
         file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
         file2['DecayTree'] = results
