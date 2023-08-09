@@ -56,7 +56,6 @@ class MlpConditionalDecoder(nn.Module):
         self.fcl = nn.Linear(256, out_features)
 
     def forward(self, x, c):
-        c = torch.reshape(c, (-1, c.shape[1]*c.shape[2]))
         x = torch.cat((x, c), dim=-1)
 
         x = self.fc1(x)
@@ -77,14 +76,27 @@ class MlpConditionalDecoder(nn.Module):
 
 
 class MlpConditionalVAE(BaseVAE):
-    def __init__(self, latent_dim=64, data_feature_dim=[3,3], conditional_dim=[1, 3], **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, latent_dim=64, data_feature_dim=None, conditional_feats=None, **kwargs):
+        super().__init__()
+
+        if data_feature_dim is None:
+            data_feature_dim = [3, 3]
+
         self.latent_dim = latent_dim
         self.data_feature_dim = data_feature_dim
-        self.conditional_dim = conditional_dim
-
         reduced_data_feature_dim = reduce(mul, self.data_feature_dim)
-        reduced_conditional_dim = reduce(mul, self.conditional_dim)
+
+        if conditional_feats is None:
+            conditional_feats = {'momenta_mother_pp': [1, 3]}
+
+        assert type(conditional_feats) is dict
+
+        self.conditional_feats = {}
+        reduced_conditional_dim = 0
+        for k,v in sorted(conditional_feats.items()):
+            reduced_dims = reduce(mul, v)
+            self.conditional_feats[k] = reduced_dims
+            reduced_conditional_dim += reduced_dims
 
         self.encoder = MlpConditionalEncoder(in_features=reduced_data_feature_dim, out_features=self.latent_dim * 4, condition_dims=reduced_conditional_dim)
         self.decoder = MlpConditionalDecoder(in_features=latent_dim, out_features=reduced_data_feature_dim, condition_dims=reduced_conditional_dim)
@@ -95,16 +107,11 @@ class MlpConditionalVAE(BaseVAE):
 
     def encode(self, x: Tensor, c: Tensor) -> List[Tensor]:
         assert len(x.shape) == 3
-        assert len(c.shape) == 3
 
         assert x.shape[1] == self.data_feature_dim[0]
         assert x.shape[2] == self.data_feature_dim[1]
 
-        assert c.shape[1] == self.conditional_dim[0]
-        assert c.shape[2] == self.conditional_dim[1]
-
         x = torch.reshape(x, (-1, x.shape[1]*x.shape[2]))
-        c = torch.reshape(c, (-1, c.shape[1]*c.shape[2]))
         x = torch.cat((x, c), dim=-1)
 
         result = self.encoder(x, c)
@@ -125,8 +132,20 @@ class MlpConditionalVAE(BaseVAE):
         eps = torch.randn_like(std)
         return eps * std + mu
 
+
+    def _get_cat_condition(self, data_samples):
+        conditions = []
+        for k,v in sorted(self.conditional_feats.items()):
+            x = data_samples[k].reshape((-1, v))
+            assert x.shape[1] == v
+            conditions += [x]
+
+        return torch.cat(conditions, dim=1)
+
     def forward(self, input: dict, **kwargs) -> dict:
-        features, condition = input['momenta_pp'], input['momenta_mother_pp']
+        features = input['momenta_pp']
+
+        condition = self._get_cat_condition(input)
 
         mu, log_var = self.encode(features, condition)
         z = self.reparameterize(mu, log_var)
@@ -146,16 +165,6 @@ class MlpConditionalVAE(BaseVAE):
 
         kld_weight = kwargs['M_N']  # Account for the minibatch samples from the dataset
 
-        # with torch.no_grad():
-        #     y = input.cpu().numpy()
-        #     y = y.reshape(-1, 9)
-        #     y = np.sum(y, axis=1)
-        #
-        #     x = recons.cpu().numpy()
-        #     x = x.reshape(-1, 9)
-        #     x = np.sum(x, axis=1)
-        #     print("X", np.min(x), np.mean(x), np.max(x), np.min(y), np.mean(y), np.max(y))
-
         recons_loss = F.mse_loss(recons, input)
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
@@ -165,9 +174,9 @@ class MlpConditionalVAE(BaseVAE):
 
     def sample(self,
                num_samples: int,
-               current_device: int, condition: dict, **kwargs) -> Tensor:
+               current_device: int, data_dict: dict, **kwargs) -> Tensor:
 
-        condition = condition['momenta_mother_pp']
+        condition = self._get_cat_condition(data_dict)
 
         assert condition.shape[0] == num_samples
 

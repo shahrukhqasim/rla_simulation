@@ -331,41 +331,55 @@ class ThreeBodyDecayPlotter:
 
     def _do_plot(self, file, data_samples_, condition=None):
         if condition is not None:
-
             def replace_text_with_data(match):
                 var_name = match.group(1)
                 return f"data_samples_['{var_name}']"
 
-            condition_code = re.sub(r"\{(\w+)\}", replace_text_with_data, condition)
+            if type(condition) is list:
+                assert len(condition) == 2
+                condition_code_, condition_render_text = condition
+            condition_code = re.sub(r"\{(\w+)\}", replace_text_with_data, condition_code_)
             condition_evaluated = eval(condition_code)
             data_samples = {}
             for k,v in data_samples_.items():
                 data_samples[k] = v[condition_evaluated]
         else:
+            condition_render_text = 'No condition'
             data_samples = data_samples_
 
         with PdfPages(file) as pdf:
+            # Create a new figure
+            fig, ax = plt.subplots(figsize=(9, 4))  # A4 size in inches
+
+            # Add text to the middle of the page
+            ax.text(0.5, 0.5, condition_render_text, ha='center', va='center', fontsize=12)
+            ax.set_axis_off()
+
+            # Save the figure to the PDF
+            pdf.savefig(fig)
+            fig.clear()
+
             fig, ax = self._make_2d_histo_three_body_prods(data_samples['momenta'], 'True decay products')
             pdf.savefig(fig)
             fig.clear()
 
-            if 'momenta_reconstructed' in data_samples:
-                fig, ax = self._make_2d_histo_three_body_prods(data_samples['momenta_reconstructed'], 'Reconstructed decay products')
+            if 'momenta_reconstructed_upp' in data_samples:
+                fig, ax = self._make_2d_histo_three_body_prods(data_samples['momenta_reconstructed_upp'], 'Reconstructed decay products')
                 pdf.savefig(fig)
                 fig.clear()
 
 
-                fig, ax = self._make_2d_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed'],
+                fig, ax = self._make_2d_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed_upp'],
                           'Reconstructed vs true dist. diff. $\\log_{10}(N_{\\mathrm{reco}} / N_{\\mathrm{true}})$')
                 pdf.savefig(fig)
                 fig.clear()
 
-            if 'momenta_sampled' in data_samples:
-                fig, ax = self._make_2d_histo_three_body_prods(data_samples['momenta_sampled'], 'Sampled decay products')
+            if 'momenta_sampled_upp' in data_samples:
+                fig, ax = self._make_2d_histo_three_body_prods(data_samples['momenta_sampled_upp'], 'Sampled decay products')
                 pdf.savefig(fig)
                 fig.clear()
 
-                fig, ax = self._make_2d_three_body_prods_hist_diff(data_samples['momenta_sampled'], data_samples['momenta_reconstructed'],
+                fig, ax = self._make_2d_three_body_prods_hist_diff(data_samples['momenta_sampled_upp'], data_samples['momenta_reconstructed_upp'],
                           'Sampled vs true dist. diff. $\\log_{10}(N_{\\mathrm{sampled}} / N_{\\mathrm{true}})$')
                 pdf.savefig(fig)
                 fig.clear()
@@ -375,22 +389,22 @@ class ThreeBodyDecayPlotter:
             pdf.savefig(fig)
             fig.clear()
 
-            if 'momenta_reconstructed' in data_samples:
-                fig, ax = self._make_histo_three_body_prods(data_samples['momenta_reconstructed'], str='Reconstructed decay products')
+            if 'momenta_reconstructed_upp' in data_samples:
+                fig, ax = self._make_histo_three_body_prods(data_samples['momenta_reconstructed_upp'], str='Reconstructed decay products')
                 pdf.savefig(fig)
                 fig.clear()
 
-                fig, ax = self._make_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed'],
+                fig, ax = self._make_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed_upp'],
                                                                 str='Reconstructed vs true decay products', ylabel='true', ylabel_2='reco')
                 pdf.savefig(fig)
                 fig.clear()
 
-            if 'momenta_sampled' in data_samples:
-                fig, ax = self._make_histo_three_body_prods(data_samples['momenta_sampled'], str='Sampled decay products')
+            if 'momenta_sampled_upp' in data_samples:
+                fig, ax = self._make_histo_three_body_prods(data_samples['momenta_sampled_upp'], str='Sampled decay products')
                 pdf.savefig(fig)
                 fig.clear()
 
-                fig, ax = self._make_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_sampled'],
+                fig, ax = self._make_three_body_prods_hist_diff(data_samples['momenta'], data_samples['momenta_sampled_upp'],
                                                                 str='Sampled vs true decay products', ylabel='true', ylabel_2='sampled')
                 pdf.savefig(fig)
                 fig.clear()
@@ -403,28 +417,29 @@ class ThreeBodyDecayPlotter:
             pdf.savefig(fig)
             fig.clear()
 
-            if 'momenta_reconstructed' in data_samples:
-                fig, ax = self._make_hist_pz_pz(data_samples['momenta_reconstructed'], data_samples['momenta_mother'], str='Mother vs reconstructed decay products ')
+            if 'momenta_reconstructed_upp' in data_samples:
+                fig, ax = self._make_hist_pz_pz(data_samples['momenta_reconstructed_upp'], data_samples['momenta_mother'], str='Mother vs reconstructed decay products ')
                 pdf.savefig(fig)
                 fig.clear()
 
-
-                fig, ax = self._make_pz_pz_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed'], data_samples['momenta_mother'], str='Mother vs reconstructed decay products hist. diff. $\\log_{10}(N_{\\mathrm{reco}} / N_{\\mathrm{true}})$')
+                fig, ax = self._make_pz_pz_hist_diff(data_samples['momenta'], data_samples['momenta_reconstructed_upp'], data_samples['momenta_mother'], str='Mother vs reconstructed decay products hist. diff. $\\log_{10}(N_{\\mathrm{reco}} / N_{\\mathrm{true}})$')
                 pdf.savefig(fig)
                 fig.clear()
 
-            if 'momenta_sampled' in data_samples:
-                fig, ax = self._make_hist_pz_pz(data_samples['momenta_sampled'], data_samples['momenta_mother'], str='Mother vs sampled decay products ')
+            if 'momenta_sampled_upp' in data_samples:
+                fig, ax = self._make_hist_pz_pz(data_samples['momenta_sampled_upp'], data_samples['momenta_mother'], str='Mother vs sampled decay products ')
                 pdf.savefig(fig)
                 fig.clear()
 
-                fig, ax = self._make_pz_pz_hist_diff(data_samples['momenta'], data_samples['momenta_sampled'], data_samples['momenta_mother'], str='Mother vs sampled decay products hist. diff. $\\log_{10}(N_{\\mathrm{sampled}} / N_{\\mathrm{true}})$')
+                fig, ax = self._make_pz_pz_hist_diff(data_samples['momenta'], data_samples['momenta_sampled_upp'], data_samples['momenta_mother'], str='Mother vs sampled decay products hist. diff. $\\log_{10}(N_{\\mathrm{sampled}} / N_{\\mathrm{true}})$')
                 pdf.savefig(fig)
                 fig.clear()
 
     def plot(self, data_samples, file):
         if type(data_samples) is list:
             data_samples = tensors_dict_join(data_samples)
+
+        print(data_samples.keys())
 
         assert type(data_samples) is dict
 
@@ -441,6 +456,8 @@ class ThreeBodyDecayPlotter:
         assert data_samples_2['momenta'].shape[2] == 3
         assert data_samples_2['momenta_mother'].shape[2] == 3
         assert data_samples_2['momenta_mother'].shape[1] == 1
+
+        print(data_samples_2.keys())
 
         self._do_plot(file+'_%03d.pdf'%0, data_samples_2)
         if self.conditions is not None:

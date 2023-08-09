@@ -63,7 +63,7 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         output = self.forward(batch_2)
 
         # The code will find the momenta_mother_pp as the condition -- dicts are always easier to manage
-        sampled = self.model.sample(len( list(batch.values())[0]), self.curr_device, condition=batch_2)
+        sampled = self.model.sample(len( list(batch.values())[0]), self.curr_device, data_dict=batch_2)
 
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PostProcessor):
@@ -166,7 +166,7 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
         # The code will find the momenta_mother_pp as the condition -- dicts are always easier to manage
-        sampled = self.model.sample(len(list(batch.values())[0]), self.curr_device, condition=batch_2)
+        sampled = self.model.sample(len(list(batch.values())[0]), self.curr_device, data_dict=batch_2)
 
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PostProcessor):
@@ -199,7 +199,6 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
 
 
-
 def main(config_file='configs/vae_conditional.yaml', predict=False):
     try:
         with open(config_file, 'r') as file:
@@ -209,8 +208,7 @@ def main(config_file='configs/vae_conditional.yaml', predict=False):
         exit()
 
     data = ThreeBodyDecayDataset(**config["data_params"])
-    vae_network = MlpConditionalVAE(**config["network_params"])
-
+    vae_network = MlpConditionalVAE(**config["model_params"])
 
     if predict:
         experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['generate_params'], config['plotter'])
