@@ -19,7 +19,7 @@ logging_params:
   name: "MlpConditionalVAE_with_masses"
 
 data_params:
-  data_path: "data/training_LARGE_multiparts_alpha.root"
+  data_path: "data/two_modes_test.root"
   train_batch_size: 512
   val_batch_size: 512
 
@@ -46,9 +46,10 @@ plotter:
 
 # Conditions will be an array of strings or an array of arrays.
 # If its an array of arrays, the second axis will always be 2 and the second element will refer to what to render
+# TODO: Should change it to dict?
   conditions: [
     ['{momenta_mother}[:,0,2] < 1000','${p_m}_z$ < 1000'],
     ['{pdgid_particle_1} == -11','At least one decay product is e+'],
-    ['np.logical_and({pdgid_particle_1} == 321, np.logical_and({pdgid_particle_2} == 321, {pdgid_particle_3} == -321))', '$B+ -> K+ K+ K+$'],
-    ['np.logical_and({pdgid_particle_1} == -11, np.logical_and({pdgid_particle_2} == -11, {pdgid_particle_3} == +11))', '$B+ -> e+ e+ e-$'],
+    ['np.logical_and({pdgid_particle_1} == 321, np.logical_and({pdgid_particle_2} == 321, np.logical_and({pdgid_particle_3} == -321, {pdgid_mother} == 411)))', '$D^+ -> K^+ K^+ K^-$'],
+    ['np.logical_and({pdgid_particle_1} == -11, np.logical_and({pdgid_particle_2} == -11, np.logical_and({pdgid_particle_3} == +11, {pdgid_mother} == 411)))', '$D^+ -> e^+ e^+ e^-$'],
   ]

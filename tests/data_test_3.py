@@ -16,7 +16,6 @@ def main(config_file='configs/vae_conditional.yaml'):
         print(exc)
         exit()
 
-
     plotter = ThreeBodyDecayPlotter(**config['plotter'])
     data = ThreeBodyDecayDataset(**config["data_params"])
     data.setup()

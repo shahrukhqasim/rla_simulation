@@ -1,6 +1,30 @@
 import torch
 from torch.utils.data import Dataset, TensorDataset
 import numpy as np
+from particle import Particle
+import warnings
+
+
+def get_pdgid(name_):
+    rapidsim2pdg_mapping = {
+        'p+': 'p',
+        'p-': 'p~',
+    }
+
+    if name_ in rapidsim2pdg_mapping:
+        name = rapidsim2pdg_mapping[name_]
+    else:
+        name = name_
+
+    respective = Particle.findall(name=name)
+    assert len(respective) >0
+
+    if len(respective) > 1:
+        verified_multiple_ok = {'p'}
+        if name not in verified_multiple_ok:
+            warnings.warn(RuntimeWarning('Multiple particles found for the input %s: '%name_+str(respective)))
+
+    return int(respective[0].pdgid)
 
 def tensors_dict_join(list_of_dicts):
     collected_tensors = {}

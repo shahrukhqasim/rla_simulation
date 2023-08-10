@@ -1,0 +1,9 @@
+
+
+
+
+run_101:
+  decays: [
+    {'mother':'D+', 'daughters': ['K+', 'K+', 'K-'], 'num_sims': 1000000},
+    {'mother':'D+', 'daughters': ['e+', 'e+', 'e-'], 'num_sims': 1000000},
+  ]
