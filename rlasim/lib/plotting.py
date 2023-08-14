@@ -201,7 +201,7 @@ class ThreeBodyDecayPlotter:
 
                 # ax.imshow(divergence, extent=extent, origin='lower', aspect='auto', cmap='viridis')
                 fig.colorbar(
-                    ax.imshow(divergence.T, extent=extent, origin='lower', aspect='auto', cmap='viridis',
+                    ax.imshow(divergence.T, extent=extent, origin='lower', aspect='auto', cmap='PiYG',
                     vmin=-3, vmax=+3)
                 )
 
@@ -318,7 +318,7 @@ class ThreeBodyDecayPlotter:
 
             # ax.imshow(divergence, extent=extent, origin='lower', aspect='auto', cmap='viridis')
             fig.colorbar(
-                ax.imshow(divergence.T, extent=extent, origin='lower', aspect='auto', cmap='viridis',
+                ax.imshow(divergence.T, extent=extent, origin='lower', aspect='auto', cmap='PiYG',
                           vmin=-3, vmax=+3)
             )
 
