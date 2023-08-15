@@ -25,10 +25,10 @@ cd ..
 
 Adjust `configs/vae_1.yaml` file accordingly and then run the training as:
 ```shell
-python3 rlasim/bin/train_1.py
+python3 rlasim/bin/train_conditional_vae.py
 ```
 
-Generate data with:
+And then run the test with:
 ```shell
-python3 rlasim/bin/train_1.py --infer
+python3 rlasim/bin/train_conditional_vae.py --predict
 ```
