@@ -12,7 +12,8 @@ from rlasim.lib.data_core import get_pdgid
 import pandas as pd
 
 # from particle import Particle
-# print(Particle.from_pdgid(-12))
+# print(Particle.from_pdgid(431))
+# print(Particle.from_pdgid(-431))
 # quit()
 
 def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
