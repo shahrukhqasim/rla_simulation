@@ -16,6 +16,13 @@ def get_pdgid(name_):
         'p-': 'p~',
         'nue': 'nu(e)',
         'anti-nue': 'nu(e)~',
+        'Bs0': 'B(s)0',
+        'Bs0b': 'B(s)~0',
+        'Bc+': 'B(c)+',
+        'Bc-': 'B(c)-',
+        'D0b': 'D~0',
+        'Ds+': 'D(s)+',
+        'Ds-': 'D(s)-',
     }
 
     if name_ in rapidsim2pdg_mapping:
