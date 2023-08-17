@@ -844,11 +844,13 @@ class ThreeBodyDecayDataset(LightningDataModule):
     def __init__(
             self,
             data_path: str,
+            legacy_rotation: bool,
             train_batch_size: int = 8,
             val_batch_size: int = 8,
             num_workers: int = 0,
             pin_memory: bool = True,
             train_test_split: float = 0.8,
+            split_seed = -1,
             **kwargs,
     ):
         super().__init__()
@@ -860,6 +862,9 @@ class ThreeBodyDecayDataset(LightningDataModule):
         self.pin_memory = pin_memory
         self.train_test_split = train_test_split
         self.preprocessors = []
+
+        self.legacy_rotation = legacy_rotation
+        self.split_seed = split_seed
 
     def get_data_simple(self, file):
         file = uproot.open(file)["DecayTree"]
@@ -936,19 +941,33 @@ class ThreeBodyDecayDataset(LightningDataModule):
         E = np.sqrt(results.particle_3_M ** 2 + PM_vec_ROT[0] ** 2 + PM_vec_ROT[1] ** 2 + PM_vec_ROT[2] ** 2)
         PM_ROT = vector.obj(px=PM_vec_ROT[0], py=PM_vec_ROT[1], pz=PM_vec_ROT[2], E=E)
 
-        training_parameters["P1_px"] = P1_ROT.px
-        training_parameters["P1_py"] = P1_ROT.py
-        training_parameters["P1_pz"] = P1_ROT.pz
-        training_parameters["P2_px"] = P2_ROT.px
-        training_parameters["P2_py"] = P2_ROT.py
-        training_parameters["P2_pz"] = P2_ROT.pz
-        training_parameters["P3_px"] = P3_ROT.px
-        training_parameters["P3_py"] = P3_ROT.py
-        training_parameters["P3_pz"] = P3_ROT.pz
+        if self.legacy_rotation:
+            training_parameters["P1_px"] = P1_ROT.px
+            training_parameters["P1_py"] = P1_ROT.py
+            training_parameters["P1_pz"] = P1_ROT.pz
+            training_parameters["P2_px"] = P2_ROT.px
+            training_parameters["P2_py"] = P2_ROT.py
+            training_parameters["P2_pz"] = P2_ROT.pz
+            training_parameters["P3_px"] = P3_ROT.px
+            training_parameters["P3_py"] = P3_ROT.py
+            training_parameters["P3_pz"] = P3_ROT.pz
+            training_parameters["PM_px"] = PM_ROT.px
+            training_parameters["PM_py"] = PM_ROT.py
+            training_parameters["PM_pz"] = PM_ROT.pz
+        else:
 
-        training_parameters["PM_px"] = PM_ROT.px
-        training_parameters["PM_py"] = PM_ROT.py
-        training_parameters["PM_pz"] = PM_ROT.pz
+            training_parameters["P1_px"] = P1.px
+            training_parameters["P1_py"] = P1.py
+            training_parameters["P1_pz"] = P1.pz
+            training_parameters["P2_px"] = P2.px
+            training_parameters["P2_py"] = P2.py
+            training_parameters["P2_pz"] = P2.pz
+            training_parameters["P3_px"] = P3.px
+            training_parameters["P3_py"] = P3.py
+            training_parameters["P3_pz"] = P3.pz
+            training_parameters["PM_px"] = PM.px
+            training_parameters["PM_py"] = PM.py
+            training_parameters["PM_pz"] = PM.pz
 
 
         reshaped = np.asarray(
@@ -994,7 +1013,9 @@ class ThreeBodyDecayDataset(LightningDataModule):
         train_size = int(0.8 * len(full_dataset))
         test_size = len(full_dataset) - train_size
 
-        self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size])
+        generator = None if self.split_seed == -1 else torch.Generator().manual_seed(self.split_seed)
+        self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
+                                                                generator=generator)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

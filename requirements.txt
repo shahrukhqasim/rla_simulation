@@ -8,3 +8,4 @@ argh~=0.26.2
 uproot~=5.0.10
 pandas~=1.5.2
 scikit-learn~=1.3.0
+particle~=0.23.0

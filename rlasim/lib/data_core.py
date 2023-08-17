@@ -31,7 +31,9 @@ def get_pdgid(name_):
         name = name_
 
     respective = Particle.findall(name=name)
-    assert len(respective) >0
+    if len(respective) == 0:
+        raise ValueError('Unable to find a match for the particle %s.'%name_)
+
 
     if len(respective) > 1:
         verified_multiple_ok = {'p'}

@@ -22,15 +22,17 @@ data_params:
   data_path: "data/two_modes_test.root"
   train_batch_size: 512
   val_batch_size: 512
+  legacy_rotation: False
 
 
 generate_params:
-  checkpoint_path: "logs/MlpConditionalVAE_with_decay_masses/version_1/checkpoints/last.ckpt"
-  pdf_prefix: "logs/MlpConditionalVAE_with_decay_masses/version_1/samples/gen_res"
+  checkpoint_path: "logs/MlpConditionalVAE_with_decay_masses/version_3/checkpoints/last.ckpt"
+  pdf_prefix: "logs/MlpConditionalVAE_with_decay_masses/version_3/samples/gen_res"
 #  total_samples: 20000
   batch_size: 512
   predict_batch_size: 512
   kld_weight: 0.00025
+  split_seed: 99
 
 
 plotter:
