@@ -226,7 +226,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
             file2.close()
 
             time_B = time.time()
-
+            
     time_B_full = time.time()
 
     # os.system('rm dump.txt')
