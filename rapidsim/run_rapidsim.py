@@ -8,6 +8,8 @@ import uproot
 import numpy as np
 import yaml
 from particle import Particle
+from tqdm import tqdm
+
 from rlasim.lib.data_core import get_pdgid
 import pandas as pd
 
@@ -198,7 +200,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
     time_A_full = time.time()
     rs_idx = -1
     for particle_m in list(decay_channels.keys()):
-        for particle_combination in decay_channels[particle_m]:
+        for particle_combination in tqdm(decay_channels[particle_m]):
 
             N = int(N_events/N_channels_total)
 
