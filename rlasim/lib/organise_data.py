@@ -739,9 +739,8 @@ class MomentaCatPreprocessor(nn.Module, PreProcessor):
 
         momenta = momenta.reshape((len(sample['particle_1_PX']), 3, 3))
 
-        momenta_mother = torch.cat([sample['mother_PX_TRUE'][np.newaxis],
-                             sample['mother_PY_TRUE'][np.newaxis], sample['mother_PZ_TRUE'][np.newaxis]])
-
+        momenta_mother = torch.stack([sample['mother_PX_TRUE'],
+                             sample['mother_PY_TRUE'], sample['mother_PZ_TRUE']], dim=1)
         momenta_mother = momenta_mother.reshape((len(sample['particle_1_PX']), 1, 3))
 
         sample_2 = {}
@@ -1083,8 +1082,9 @@ class ThreeBodyDecayDataset(LightningDataModule):
                                                                     generator=generator)
         else:
             self.dataset_train = self.data_path['train']
-            #RootTensorDataset(self.data_path['train'], 'DecayTree', cache_size=self.load_together)
-            self.dataset_test = RootTensorDataset(self.data_path['validate'], 'DecayTree', cache_size=self.load_together)
+            # self.dataset_train = RootTensorDataset(self.data_path['train'], 'DecayTree', cache_size=-1)
+            self.dataset_test = self.data_path['validate']
+            # self.dataset_test = RootTensorDataset(self.data_path['validate'], 'DecayTree', cache_size=-1)
             # train_size = int(0.8 * len(full_dataset))
             # test_size = len(full_dataset) - train_size
 
@@ -1094,31 +1094,39 @@ class ThreeBodyDecayDataset(LightningDataModule):
             # self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
             #                                                                       generator=generator)
 
-    def train_dataloader(self) -> DataLoader:
-        # x = DataLoader(
+    def train_dataloader(self):
+        # dataloader = DataLoader(
         #     self.dataset_train,
         #     batch_size=self.train_batch_size,
         #     num_workers=self.num_workers,
-        #     shuffle=self.shuffle,
+        #     shuffle=False,
         #     pin_memory=self.pin_memory,
         # )
+        # print("train_dataloader() getting called.")
         dataloader = RootBlockShuffledSubsetDataLoader(self.dataset_train,
-                                                       block_size=1000,
-                                                       num_blocks=1000,
+                                                       block_size=10000,
+                                                       num_blocks=100,
                                                        batch_size=self.train_batch_size)
 
         return dataloader
 
-    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        x= DataLoader(
-            self.dataset_test,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
+    def val_dataloader(self):
+        # x= DataLoader(
+        #     self.dataset_test,
+        #     batch_size=self.val_batch_size,
+        #     num_workers=self.num_workers,
+        #     shuffle=False,
+        #     pin_memory=self.pin_memory,
+        # )
+        # return x
 
-        return x
+        dataloader = RootBlockShuffledSubsetDataLoader(self.dataset_test,
+                                                       block_size=10000,
+                                                       num_blocks=100,
+                                                       batch_size=self.train_batch_size)
+
+        return dataloader
+
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return DataLoader(
