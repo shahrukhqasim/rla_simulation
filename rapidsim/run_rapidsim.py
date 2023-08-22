@@ -244,12 +244,12 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
         num_processes = 20
         pool = multiprocessing.Pool(processes=num_processes)
 
-        print(commands)
-        print(len(commands))
         results = pool.map(run_command, commands)
 
         pool.close()
         pool.join()
+
+        time_B = time.time()
 
     time_B_full = time.time()
 
