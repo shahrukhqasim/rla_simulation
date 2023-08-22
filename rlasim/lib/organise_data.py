@@ -16,7 +16,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 from torch import nn
 
-from rlasim.lib.data_core import DictTensorDataset, tensors_dict_join
+from rlasim.lib.data_core import DictTensorDataset, tensors_dict_join, RootTensorDataset, RootTensorDataset2, \
+    nbe_default_collate, RootBlockShuffledSubsetDataLoader
 
 
 def rotation_matrix_from_vectors_vectorised(vec1, vec2):
@@ -722,12 +723,43 @@ class PreProcessor():
 class PostProcessor():
     pass
 
+class MomentaCatPreprocessor(nn.Module, PreProcessor):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, sample, direction=1, on=None):
+        if direction != 1:
+            raise ValueError('MomentaCatPreprocessor is only a preprocessor.')
+
+        momenta = torch.stack([sample['particle_1_PX'], sample['particle_1_PY'],
+                               sample['particle_1_PZ'], sample['particle_2_PX'],
+                               sample['particle_2_PY'], sample['particle_2_PZ'],
+                               sample['particle_3_PX'], sample['particle_3_PY'],
+                               sample['particle_3_PZ']], dim=1)
+
+        momenta = momenta.reshape((len(sample['particle_1_PX']), 3, 3))
+
+        momenta_mother = torch.cat([sample['mother_PX_TRUE'][np.newaxis],
+                             sample['mother_PY_TRUE'][np.newaxis], sample['mother_PZ_TRUE'][np.newaxis]])
+
+        momenta_mother = momenta_mother.reshape((len(sample['particle_1_PX']), 1, 3))
+
+        sample_2 = {}
+        sample_2['momenta'] = momenta
+        sample_2['momenta_mother'] = momenta_mother
+
+        return sample_2
+
+
 class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProcessor):
     def __init__(self, estimation_sample):
         super(OnlineThreeBodyDecayMomentaPreprocessor, self).__init__()
         if type(estimation_sample) is list:
             estimation_sample = tensors_dict_join(estimation_sample)
         self.get_limits_from_samples(estimation_sample['momenta'], estimation_sample['momenta_mother'])
+
+        # print(torch.min(estimation_sample['particle_3_PZ'], dim=0), torch.min(estimation_sample['mother_PZ_TRUE'], dim=0))
+        # print(torch.min(estimation_sample['momenta'], dim=[0,1]), torch.min(estimation_sample['momenta_mother'], dim=0))
 
 
     def forward(self, sample: dict, direction=1, on=None):
@@ -832,18 +864,20 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
             sample = sample * 1
             sample = (sample + 1) * 0.5 * (self.max_decay_prods - self.min_decay_prods) + self.min_decay_prods
             sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
+            sample = torch.nan_to_num(sample)
 
         if sample_mother is not None:
             sample_mother = sample_mother * 1
             sample_mother = (sample_mother + 1) * 0.5 * (self.max_mother - self.min_mother) + self.min_mother
             sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
+            sample_mother = torch.nan_to_num(sample_mother)
 
         return sample, sample_mother
 
 class ThreeBodyDecayDataset(LightningDataModule):
     def __init__(
             self,
-            data_path: str,
+            data_path: dict,
             legacy_rotation: bool,
             train_batch_size: int = 8,
             val_batch_size: int = 8,
@@ -851,6 +885,9 @@ class ThreeBodyDecayDataset(LightningDataModule):
             pin_memory: bool = True,
             train_test_split: float = 0.8,
             split_seed = -1,
+            use_root_reader = False,
+            load_together=200000,
+            shuffle=False,
             **kwargs,
     ):
         super().__init__()
@@ -865,83 +902,92 @@ class ThreeBodyDecayDataset(LightningDataModule):
 
         self.legacy_rotation = legacy_rotation
         self.split_seed = split_seed
+        self.use_root_reader = use_root_reader
+        self.load_together = load_together
+        self.shuffle = shuffle # Only set to true if the whole dataset can be loaded into memory
 
     def get_data_simple(self, file):
+        print("Attempting eta load")
         file = uproot.open(file)["DecayTree"]
         keys = file.keys()
 
         results = file.arrays(keys, library="np")
-        results = pd.DataFrame.from_dict(results)
-
-        mother_P = np.sqrt(results.mother_PX ** 2 + results.mother_PY ** 2 + results.mother_PZ ** 2)
-        mother_P_true = np.sqrt(results.mother_PX_TRUE ** 2 + results.mother_PY_TRUE ** 2 + results.mother_PZ_TRUE ** 2)
-
-        shape = np.shape(results)
-        training_parameters = {}
-
-        pe_1 = np.sqrt(
-            results.particle_1_M ** 2 + results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2)
-        pe_2 = np.sqrt(
-            results.particle_2_M ** 2 + results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2)
-        pe_3 = np.sqrt(
-            results.particle_3_M ** 2 + results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2)
-
-        pe = pe_1 + pe_2 + pe_3
-        px = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
-        py = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
-        pz = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
-
-        B = vector.obj(px=px, py=py, pz=pz, E=pe)
-
-        Bmass = np.sqrt(B.E ** 2 - B.px ** 2 - B.py ** 2 - B.pz ** 2)
-
-        B_phi = np.arctan2(B.py, B.px)
-        training_parameters["B_phi"] = B_phi
-        B_theta = np.arctan2(B.px, B.pz)
-        training_parameters["B_theta"] = B_theta
-        B_p = np.sqrt(B.px ** 2 + B.py ** 2 + B.pz ** 2)
-        training_parameters["B_P"] = B_p
-
-        B_vec = np.swapaxes(norm(np.asarray([B.px, B.py, B.pz])), 0, 1)
-
-        all_pz = np.swapaxes(
-            norm(np.asarray([np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), np.ones((np.shape(Bmass)))])), 0,
-            1)
-
-        ROT_matrix = rotation_matrix_from_vectors_vectorised(B_vec, all_pz)
-
-        P1 = vector.obj(px=results.particle_1_PX, py=results.particle_1_PY, pz=results.particle_1_PZ,
-                        E=results.particle_1_E)
-        P2 = vector.obj(px=results.particle_2_PX, py=results.particle_2_PY, pz=results.particle_2_PZ,
-                        E=results.particle_2_E)
-        P3 = vector.obj(px=results.particle_3_PX, py=results.particle_3_PY, pz=results.particle_3_PZ,
-                        E=results.particle_3_E)
-        PM = vector.obj(px=results.mother_PX_TRUE, py=results.mother_PY_TRUE, pz=results.mother_PZ_TRUE,
-                        E=results.mother_E_TRUE)
-
-        P1_vec = [P1.px, P1.py, P1.pz]
-        P2_vec = [P2.px, P2.py, P2.pz]
-        P3_vec = [P3.px, P3.py, P3.pz]
-        PM_vec = [PM.px, PM.py, PM.pz]
-
-        P1_vec_ROT = rot_vectorised(P1_vec, ROT_matrix)
-        P2_vec_ROT = rot_vectorised(P2_vec, ROT_matrix)
-        P3_vec_ROT = rot_vectorised(P3_vec, ROT_matrix)
-        PM_vec_ROT = rot_vectorised(PM_vec, ROT_matrix)
-
-        E = np.sqrt(results.particle_1_M ** 2 + P1_vec_ROT[0] ** 2 + P1_vec_ROT[1] ** 2 + P1_vec_ROT[2] ** 2)
-        P1_ROT = vector.obj(px=P1_vec_ROT[0], py=P1_vec_ROT[1], pz=P1_vec_ROT[2], E=E)
-
-        E = np.sqrt(results.particle_2_M ** 2 + P2_vec_ROT[0] ** 2 + P2_vec_ROT[1] ** 2 + P2_vec_ROT[2] ** 2)
-        P2_ROT = vector.obj(px=P2_vec_ROT[0], py=P2_vec_ROT[1], pz=P2_vec_ROT[2], E=E)
-
-        E = np.sqrt(results.particle_3_M ** 2 + P3_vec_ROT[0] ** 2 + P3_vec_ROT[1] ** 2 + P3_vec_ROT[2] ** 2)
-        P3_ROT = vector.obj(px=P3_vec_ROT[0], py=P3_vec_ROT[1], pz=P3_vec_ROT[2], E=E)
-
-        E = np.sqrt(results.particle_3_M ** 2 + PM_vec_ROT[0] ** 2 + PM_vec_ROT[1] ** 2 + PM_vec_ROT[2] ** 2)
-        PM_ROT = vector.obj(px=PM_vec_ROT[0], py=PM_vec_ROT[1], pz=PM_vec_ROT[2], E=E)
 
         if self.legacy_rotation:
+            print("Legacy rotation")
+
+            results = pd.DataFrame.from_dict(results)
+            mother_P = np.sqrt(results.mother_PX ** 2 + results.mother_PY ** 2 + results.mother_PZ ** 2)
+            mother_P_true = np.sqrt(
+                results.mother_PX_TRUE ** 2 + results.mother_PY_TRUE ** 2 + results.mother_PZ_TRUE ** 2)
+
+            shape = np.shape(results)
+            training_parameters = {}
+
+            pe_1 = np.sqrt(
+                results.particle_1_M ** 2 + results.particle_1_PX ** 2 + results.particle_1_PY ** 2 + results.particle_1_PZ ** 2)
+            pe_2 = np.sqrt(
+                results.particle_2_M ** 2 + results.particle_2_PX ** 2 + results.particle_2_PY ** 2 + results.particle_2_PZ ** 2)
+            pe_3 = np.sqrt(
+                results.particle_3_M ** 2 + results.particle_3_PX ** 2 + results.particle_3_PY ** 2 + results.particle_3_PZ ** 2)
+
+            pe = pe_1 + pe_2 + pe_3
+            px = results.particle_1_PX + results.particle_2_PX + results.particle_3_PX
+            py = results.particle_1_PY + results.particle_2_PY + results.particle_3_PY
+            pz = results.particle_1_PZ + results.particle_2_PZ + results.particle_3_PZ
+
+            B = vector.obj(px=px, py=py, pz=pz, E=pe)
+
+            Bmass = np.sqrt(B.E ** 2 - B.px ** 2 - B.py ** 2 - B.pz ** 2)
+
+            B_phi = np.arctan2(B.py, B.px)
+            training_parameters["B_phi"] = B_phi
+            B_theta = np.arctan2(B.px, B.pz)
+            training_parameters["B_theta"] = B_theta
+            B_p = np.sqrt(B.px ** 2 + B.py ** 2 + B.pz ** 2)
+            training_parameters["B_P"] = B_p
+
+            B_vec = np.swapaxes(norm(np.asarray([B.px, B.py, B.pz])), 0, 1)
+
+            all_pz = np.swapaxes(
+                norm(
+                    np.asarray([np.zeros((np.shape(Bmass))), np.zeros((np.shape(Bmass))), np.ones((np.shape(Bmass)))])),
+                0,
+                1)
+
+            ROT_matrix = rotation_matrix_from_vectors_vectorised(B_vec, all_pz)
+
+            P1 = vector.obj(px=results.particle_1_PX, py=results.particle_1_PY, pz=results.particle_1_PZ,
+                            E=results.particle_1_E)
+            P2 = vector.obj(px=results.particle_2_PX, py=results.particle_2_PY, pz=results.particle_2_PZ,
+                            E=results.particle_2_E)
+            P3 = vector.obj(px=results.particle_3_PX, py=results.particle_3_PY, pz=results.particle_3_PZ,
+                            E=results.particle_3_E)
+            PM = vector.obj(px=results.mother_PX_TRUE, py=results.mother_PY_TRUE, pz=results.mother_PZ_TRUE,
+                            E=results.mother_E_TRUE)
+
+            P1_vec = [P1.px, P1.py, P1.pz]
+            P2_vec = [P2.px, P2.py, P2.pz]
+            P3_vec = [P3.px, P3.py, P3.pz]
+            PM_vec = [PM.px, PM.py, PM.pz]
+
+            P1_vec_ROT = rot_vectorised(P1_vec, ROT_matrix)
+            P2_vec_ROT = rot_vectorised(P2_vec, ROT_matrix)
+            P3_vec_ROT = rot_vectorised(P3_vec, ROT_matrix)
+            PM_vec_ROT = rot_vectorised(PM_vec, ROT_matrix)
+
+            E = np.sqrt(results.particle_1_M ** 2 + P1_vec_ROT[0] ** 2 + P1_vec_ROT[1] ** 2 + P1_vec_ROT[2] ** 2)
+            P1_ROT = vector.obj(px=P1_vec_ROT[0], py=P1_vec_ROT[1], pz=P1_vec_ROT[2], E=E)
+
+            E = np.sqrt(results.particle_2_M ** 2 + P2_vec_ROT[0] ** 2 + P2_vec_ROT[1] ** 2 + P2_vec_ROT[2] ** 2)
+            P2_ROT = vector.obj(px=P2_vec_ROT[0], py=P2_vec_ROT[1], pz=P2_vec_ROT[2], E=E)
+
+            E = np.sqrt(results.particle_3_M ** 2 + P3_vec_ROT[0] ** 2 + P3_vec_ROT[1] ** 2 + P3_vec_ROT[2] ** 2)
+            P3_ROT = vector.obj(px=P3_vec_ROT[0], py=P3_vec_ROT[1], pz=P3_vec_ROT[2], E=E)
+
+            E = np.sqrt(results.particle_3_M ** 2 + PM_vec_ROT[0] ** 2 + PM_vec_ROT[1] ** 2 + PM_vec_ROT[2] ** 2)
+            PM_ROT = vector.obj(px=PM_vec_ROT[0], py=PM_vec_ROT[1], pz=PM_vec_ROT[2], E=E)
+
             training_parameters["P1_px"] = P1_ROT.px
             training_parameters["P1_py"] = P1_ROT.py
             training_parameters["P1_pz"] = P1_ROT.pz
@@ -955,20 +1001,22 @@ class ThreeBodyDecayDataset(LightningDataModule):
             training_parameters["PM_py"] = PM_ROT.py
             training_parameters["PM_pz"] = PM_ROT.pz
         else:
+            print("No legacy rotation")
 
-            training_parameters["P1_px"] = P1.px
-            training_parameters["P1_py"] = P1.py
-            training_parameters["P1_pz"] = P1.pz
-            training_parameters["P2_px"] = P2.px
-            training_parameters["P2_py"] = P2.py
-            training_parameters["P2_pz"] = P2.pz
-            training_parameters["P3_px"] = P3.px
-            training_parameters["P3_py"] = P3.py
-            training_parameters["P3_pz"] = P3.pz
-            training_parameters["PM_px"] = PM.px
-            training_parameters["PM_py"] = PM.py
-            training_parameters["PM_pz"] = PM.pz
+            training_parameters = {}
 
+            training_parameters["P1_px"] = results['particle_1_PX']
+            training_parameters["P1_py"] = results['particle_1_PY']
+            training_parameters["P1_pz"] = results['particle_1_PZ']
+            training_parameters["P2_px"] = results['particle_2_PX']
+            training_parameters["P2_py"] = results['particle_2_PY']
+            training_parameters["P2_pz"] = results['particle_2_PZ']
+            training_parameters["P3_px"] = results['particle_3_PX']
+            training_parameters["P3_py"] = results['particle_3_PY']
+            training_parameters["P3_pz"] = results['particle_3_PZ']
+            training_parameters["PM_px"] = results['mother_PX_TRUE']
+            training_parameters["PM_py"] = results['mother_PY_TRUE']
+            training_parameters["PM_pz"] = results['mother_PZ_TRUE']
 
         reshaped = np.asarray(
             [[training_parameters["P1_px"], training_parameters["P1_py"], training_parameters["P1_pz"]],
@@ -981,18 +1029,34 @@ class ThreeBodyDecayDataset(LightningDataModule):
             [[training_parameters["PM_px"], training_parameters["PM_py"], training_parameters["PM_pz"]]])
         reshaped = np.swapaxes(np.asarray(reshaped), 0, 1)
         momenta_mother = np.swapaxes(np.asarray(reshaped), 0, 2)
+        print("Eta loaded")
 
-        results_dict = {
-            'momenta': momenta,
-            'momenta_mother': momenta_mother,
-            'pdgid_mother': results.mother_PID.to_numpy(),
-            'pdgid_particle_1': results.particle_1_PID.to_numpy(),
-            'pdgid_particle_2': results.particle_2_PID.to_numpy(),
-            'pdgid_particle_3': results.particle_3_PID.to_numpy(),
-            'mass_particle_1': results.particle_1_M_TRUE.to_numpy(),
-            'mass_particle_2': results.particle_2_M_TRUE.to_numpy(),
-            'mass_particle_3': results.particle_3_M_TRUE.to_numpy(),
-        }
+        if self.legacy_rotation:
+            results_dict = {
+                'mass_mother': results.mother_M.to_numpy(),
+                'momenta': momenta,
+                'momenta_mother': momenta_mother,
+                'pdgid_mother': results.mother_PID.to_numpy(),
+                'pdgid_particle_1': results.particle_1_PID.to_numpy(),
+                'pdgid_particle_2': results.particle_2_PID.to_numpy(),
+                'pdgid_particle_3': results.particle_3_PID.to_numpy(),
+                'mass_particle_1': results.particle_1_M_TRUE.to_numpy(),
+                'mass_particle_2': results.particle_2_M_TRUE.to_numpy(),
+                'mass_particle_3': results.particle_3_M_TRUE.to_numpy(),
+            }
+        else:
+            results_dict = {
+                'mass_mother': results['mother_M'],
+                'momenta': momenta,
+                'momenta_mother': momenta_mother,
+                'pdgid_mother': results['mother_PID'],
+                'pdgid_particle_1': results['particle_1_PID'],
+                'pdgid_particle_2': results['particle_2_PID'],
+                'pdgid_particle_3': results['particle_3_PID'],
+                'mass_particle_1': results['particle_1_M_TRUE'],
+                'mass_particle_2': results['particle_2_M_TRUE'],
+                'mass_particle_3': results['particle_3_M_TRUE'],
+            }
 
         return results_dict
 
@@ -1002,31 +1066,61 @@ class ThreeBodyDecayDataset(LightningDataModule):
 
 
     def setup(self, stage: Optional[str] = None) -> None:
-        results_dict = self.get_data_simple(self.data_path)
 
         # full_dataset = Dataset({
         #     'momenta': torch.Tensor(momenta),
         #     'momenta_mother': torch.tensor(momenta_mother)}
         # )
+        if not self.use_root_reader:
+            raise NotImplementedError('Adapt code to to use RootTensorDataset')
+            results_dict = self.get_data_simple(self.data_path)
+            full_dataset = DictTensorDataset({k:torch.Tensor(v) for k,v in results_dict.items()})
+            train_size = int(0.8 * len(full_dataset))
+            test_size = len(full_dataset) - train_size
 
-        full_dataset = DictTensorDataset({k:torch.Tensor(v) for k,v in results_dict.items()})
-        train_size = int(0.8 * len(full_dataset))
-        test_size = len(full_dataset) - train_size
+            generator = None if self.split_seed == -1 else torch.Generator().manual_seed(self.split_seed)
+            self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
+                                                                    generator=generator)
+        else:
+            self.dataset_train = self.data_path['train']
+            #RootTensorDataset(self.data_path['train'], 'DecayTree', cache_size=self.load_together)
+            self.dataset_test = RootTensorDataset(self.data_path['validate'], 'DecayTree', cache_size=self.load_together)
+            # train_size = int(0.8 * len(full_dataset))
+            # test_size = len(full_dataset) - train_size
 
-        generator = None if self.split_seed == -1 else torch.Generator().manual_seed(self.split_seed)
-        self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
-                                                                generator=generator)
+
+
+            # generator = None if self.split_seed == -1 else torch.Generator().manual_seed(self.split_seed)
+            # self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
+            #                                                                       generator=generator)
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.dataset_train,
-            batch_size=self.train_batch_size,
+        # x = DataLoader(
+        #     self.dataset_train,
+        #     batch_size=self.train_batch_size,
+        #     num_workers=self.num_workers,
+        #     shuffle=self.shuffle,
+        #     pin_memory=self.pin_memory,
+        # )
+        dataloader = RootBlockShuffledSubsetDataLoader(self.dataset_train,
+                                                       block_size=1000,
+                                                       num_blocks=1000,
+                                                       batch_size=self.train_batch_size)
+
+        return dataloader
+
+    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
+        x= DataLoader(
+            self.dataset_test,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
-            shuffle=True,
+            shuffle=False,
             pin_memory=self.pin_memory,
         )
 
-    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
+        return x
+
+    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return DataLoader(
             self.dataset_test,
             batch_size=self.val_batch_size,
@@ -1035,19 +1129,10 @@ class ThreeBodyDecayDataset(LightningDataModule):
             pin_memory=self.pin_memory,
         )
 
-    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=144,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
-
     def predict_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return DataLoader(
             self.dataset_test,
-            batch_size=100,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=self.pin_memory,

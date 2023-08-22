@@ -9,6 +9,7 @@ from rlasim.lib.plt_settings import set_sizing
 
 import re
 
+small_fact = 1
 
 class ThreeBodyDecayPlotter:
     def __init__(self, ranges=None, unit=None, conditions=None, **kwargs):
@@ -124,15 +125,19 @@ class ThreeBodyDecayPlotter:
                 samples_y[samples_y < self.range_min[combos[i][1]]] = self.range_min[combos[i][1]]
                 samples_y[samples_y > self.range_max[combos[i][1]]] = self.range_max[combos[i][1]]
 
+                the_range = [
+                                  [self.range_min[combos[i][0]]*small_fact, self.range_max[combos[i][0]]*(1/small_fact)],
+                                  [self.range_min[combos[i][1]]*small_fact, self.range_max[combos[i][1]]*(1/small_fact)]
+                              ]
+
                 h = ax.hist2d(samples_x,
                               samples_y,
-                              range=[
-                                  [self.range_min[combos[i][0]], self.range_max[combos[i][0]]],
-                                  [self.range_min[combos[i][1]], self.range_max[combos[i][1]]]
-                              ],
+                              range=the_range,
                               norm=LogNorm(),
                               bins=30)
-                fig.colorbar(h[3], ax=ax)
+                if not len(samples_x) == 0:
+                    fig.colorbar(h[3], ax=ax)
+
                 ax.set_xlabel('${p_%d}_%s$%s' % (p + 1, axl_dict[combos[i][0]], self.unit[combos[i][0]]))
                 ax.set_ylabel('${p_%d}_%s$%s' % (p + 1, axl_dict[combos[i][1]], self.unit[combos[i][1]] ))
                 # ax.set_ylabel('Frequency')
@@ -263,7 +268,8 @@ class ThreeBodyDecayPlotter:
                           ],
                           norm=LogNorm(),
                           bins=30)
-            fig.colorbar(h[3], ax=ax)
+            if not len(samples_x) == 0:
+                fig.colorbar(h[3], ax=ax)
             ax.set_xlabel('${p_m}_z$%s'%(self.unit[2]))
             ax.set_ylabel('${p_%d}_z$%s' % (i + 1, self.unit[2]))
 
@@ -341,9 +347,9 @@ class ThreeBodyDecayPlotter:
             condition_code = re.sub(r"\{(\w+)\}", replace_text_with_data, condition_code_)
 
             condition_evaluated = eval(condition_code)
-            print(np.unique(data_samples_['pdgid_particle_1']))
-            print(np.unique(data_samples_['pdgid_particle_2']))
-            print(np.unique(data_samples_['pdgid_particle_3']))
+            print(np.unique(data_samples_['particle_1_PID']))
+            print(np.unique(data_samples_['particle_2_PID']))
+            print(np.unique(data_samples_['particle_3_PID']))
             print(condition_code, np.mean(condition_evaluated))
             condition_render_text += ' [%.2f%%]'%(np.mean(condition_evaluated)*100.0)
             data_samples = {}
