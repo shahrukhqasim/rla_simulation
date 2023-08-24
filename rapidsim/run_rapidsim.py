@@ -14,12 +14,30 @@ from tqdm import tqdm
 from rlasim.lib.data_core import get_pdgid
 import pandas as pd
 
+from collections import Counter
+
 # from particle import Particle
 # print(Particle.from_pdgid(431))
 # print(Particle.from_pdgid(-431))
 # quit()
 
 use_EVTGEN = True
+
+
+particle_types = {}
+
+particle_types["K+"] = "meson"
+particle_types["K-"] = "meson"
+particle_types["pi+"] = "meson"
+particle_types["pi-"] = "meson"
+particle_types["e-"] = "lepton"
+particle_types["e+"] = "lepton"
+particle_types["mu-"] = "lepton"
+particle_types["mu+"] = "lepton"
+particle_types["nue"] = "lepton_neutrino"
+particle_types["anti-nue"] = "lepton_neutrino"
+
+
 
 
 if os.getlogin() == 'am13743':
@@ -34,12 +52,13 @@ if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
 
 def run_command(packed):
     rs_idx, particle_m, particle_combination, N = packed
-    particle_i = particle_combination["decay"][0]
-    particle_j = particle_combination["decay"][1]
-    particle_k = particle_combination["decay"][2]
+    particle_i = particle_combination[0]
+    particle_j = particle_combination[1]
+    particle_k = particle_combination[2]
 
     time_A = time.time()
     os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
+
     file = uproot.open(f'rs_{rs_idx}_tree.root')["DecayTree"]
     keys = file.keys()
     results = file.arrays(keys, library="np")
@@ -78,16 +97,26 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
         
         particles = pd.read_csv('particles.dat', skiprows=1, names=['ID', 'part', 'anti', 'mass', 'width', 'charge', 'spin', 'shape', 'ctau'], sep='\s+')
 
+        # mother_particles = [
+        #                         "B0", "B+", "Bs0", "Bc+", 
+        #                         "D0", "D+", "Ds+"
+        #                     ]
+        # daughter_particles = [
+        #                         "gamma",
+        #                         "K+", "pi+",
+        #                         "e-", "mu-",
+        #                         "nue",
+        #                     ]
+
         mother_particles = [
-                                "B0", "B+", "Bs0", "Bc+", 
-                                "D0", "D+", "Ds+"
+                                "D-",
                             ]
         daughter_particles = [
-                                "gamma",
-                                "K+", "pi+", "pi0",
+                                "K+", "pi+",
                                 "e-", "mu-",
                                 "nue",
                             ]
+        
 
         for index, row in particles.iterrows():
             if row['part'] in daughter_particles:
@@ -116,6 +145,10 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
             print(f'\nComputing decay channels for {mother}...')
 
             mother_info = particles[particles['part'] == mother]
+            mother_charge_factor = 1
+            if mother_info.shape[0] == 0:
+                mother_info = particles[particles['anti'] == mother]
+                mother_charge_factor = -1
 
             decay_channels[mother] = []
 
@@ -127,13 +160,55 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
                 for particle_i in unique_combination:
                     daughter_info = particles[particles['part'] == particle_i]
+                    charge_factor = 1
                     if daughter_info.shape[0] == 0:
                         daughter_info = particles[particles['anti'] == particle_i]
+                        charge_factor = -1
                     daughters_lists['masses'].append(daughter_info.mass.item())
-                    daughters_lists['charges'].append(daughter_info.charge.item())
+                    daughters_lists['charges'].append(daughter_info.charge.item()*charge_factor)
+                
+                if mother_info.mass.item() > sum(daughters_lists['masses']) and sum(daughters_lists['charges']) == mother_info.charge.item()*mother_charge_factor:
 
-                if mother_info.mass.item() > sum(daughters_lists['masses']) and sum(daughters_lists['charges']) == mother_info.charge.item():
-                    decay_channels[mother].append(unique_combination)
+                    unique_combination_dict = {"decay":unique_combination, "evtgen_model":"PHSP"}
+
+                    # D_DALITZ
+                    if mother == "D+":
+                        if Counter(unique_combination) == Counter(["K-", "pi+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["K-", "K+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi-", "K+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi-", "pi+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                    elif mother == "D-":
+                        if Counter(unique_combination) == Counter(["K+", "pi-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["K+", "K-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi+", "K-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi+", "pi-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"        
+                    elif mother == "Ds+":
+                        if Counter(unique_combination) == Counter(["K-", "K+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi-", "pi+", "K+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi-", "pi+", "pi+"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                    elif mother == "Ds-":
+                        if Counter(unique_combination) == Counter(["K+", "K-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi+", "pi-", "K-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                        elif Counter(unique_combination) == Counter(["pi+", "pi-", "pi-"]): unique_combination_dict["evtgen_model"] = "D_DALITZ"
+                    
+                    # ISGW2
+                    particle_type = []
+                    for particle in unique_combination:
+                        particle_type.append(particle_types[particle])
+                    if "meson" in particle_type and "lepton" in particle_type and "lepton_neutrino" in particle_type:
+                        unique_combination_dict["evtgen_model"] = "ISGW2"
+
+                    
+                    decay_channels[mother].append(unique_combination_dict)
+                    # print('\n')
+                    # print(unique_combination, mother_info.charge.item(), sum(daughters_lists['charges']))
+                    # for particle_i in unique_combination:
+                    #     daughter_info = particles[particles['part'] == particle_i]
+                    #     if daughter_info.shape[0] == 0:
+                    #         daughter_info = particles[particles['anti'] == particle_i]
+                    #     print(particle_i, "daughter_info:", daughter_info, "CHARGE", daughter_info.charge.item())
+                    
+
 
             print(f'{len(decay_channels[mother])} decay channels listed.')
             N_channels_total += len(decay_channels[mother])
@@ -221,13 +296,13 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
                     if 'BLANK3' in line:
                         line = line.replace('BLANK3', particle_k)
                     f_out.write(line)
-
+    
     time_A_full = time.time()
     rs_idx = -1
     for particle_m in list(decay_channels.keys()):
 
         commands = []
-        for particle_combination in tqdm(decay_channels[particle_m]):
+        for particle_combination_idx, particle_combination in enumerate(tqdm(decay_channels[particle_m])):
 
             N = int(N_events/N_channels_total)
 
@@ -236,10 +311,11 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
             particle_k = particle_combination["decay"][2]
             rs_idx += 1
             print(
-                f"{rs_idx + 1}/{N_channels_total}, Running RapidSim for {particle_m} -> {particle_i} {particle_j} {particle_k}")
+                f"{rs_idx + 1}/{N_channels_total}, Running RapidSim for {particle_m} -> {particle_i} {particle_j} {particle_k} with model: {particle_combination['evtgen_model']}")
 
-            # run_command(rs_idx, particle_m, particle_combination, N)
-            commands += [(rs_idx, particle_m, particle_combination, N)]
+            # print(particle_combination_idx, particle_combination["decay"])
+            # run_command((rs_idx, particle_m, particle_combination["decay"], N))
+            commands += [(rs_idx, particle_m, particle_combination["decay"], N)]
 
         num_processes = 20
         pool = multiprocessing.Pool(processes=num_processes)
