@@ -97,25 +97,25 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
         
         particles = pd.read_csv('particles.dat', skiprows=1, names=['ID', 'part', 'anti', 'mass', 'width', 'charge', 'spin', 'shape', 'ctau'], sep='\s+')
 
-        # mother_particles = [
-        #                         "B0", "B+", "Bs0", "Bc+", 
-        #                         "D0", "D+", "Ds+"
-        #                     ]
-        # daughter_particles = [
-        #                         "gamma",
-        #                         "K+", "pi+",
-        #                         "e-", "mu-",
-        #                         "nue",
-        #                     ]
-
         mother_particles = [
-                                "D-",
+                                "B0", "B+", "Bs0", "Bc+", 
+                                "D0", "D+", "Ds+"
                             ]
         daughter_particles = [
+                                "gamma",
                                 "K+", "pi+",
                                 "e-", "mu-",
                                 "nue",
                             ]
+
+        # mother_particles = [
+        #                         "D-",
+        #                     ]
+        # daughter_particles = [
+        #                         "K+", "pi+",
+        #                         "e-", "mu-",
+        #                         "nue",
+        #                     ]
         
 
         for index, row in particles.iterrows():
