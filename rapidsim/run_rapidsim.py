@@ -19,16 +19,24 @@ import pandas as pd
 # print(Particle.from_pdgid(-431))
 # quit()
 
-rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
+use_EVTGEN = True
+
+
+if os.getlogin() == 'am13743':
+    rapid_sim_path = '$RAPIDSIM_ROOT/build/src/RapidSim.exe'
+else:
+    rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
+    
 if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
+    print(f"Settling rapid_sim_path to {os.environ.get('RAPID_SIM_EXE_PATH')}")
     rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
 
 
 def run_command(packed):
     rs_idx, particle_m, particle_combination, N = packed
-    particle_i = particle_combination[0]
-    particle_j = particle_combination[1]
-    particle_k = particle_combination[2]
+    particle_i = particle_combination["decay"][0]
+    particle_j = particle_combination["decay"][1]
+    particle_k = particle_combination["decay"][2]
 
     time_A = time.time()
     os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
@@ -60,11 +68,11 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if config_file is None:
 
         decay_channels = {}
-        decay_channels["B+"] = [["K+", "e+", "e-"]]
-        # decay_channels["B+"] = [["K+", "K+", "K-"]]
+        decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
+        # decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"PHSP"}]
 
         N_channels_total = 1
-        N_events = 1E4
+        N_events = 1E5
 
     elif config_file == "produce_all":
         
@@ -166,19 +174,14 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     try: print(f"Running {N_channels_total} channels")
     except: pass
 
-    rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
-    if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
-        rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
-
-
     rs_idx = -1
 
     for particle_m in list(decay_channels.keys()):
         for particle_combination in decay_channels[particle_m]:
 
-            particle_i = particle_combination[0]
-            particle_j = particle_combination[1]
-            particle_k = particle_combination[2]
+            particle_i = particle_combination["decay"][0]
+            particle_j = particle_combination["decay"][1]
+            particle_k = particle_combination["decay"][2]
 
             rs_idx += 1
 
@@ -194,6 +197,15 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
                         line = line.replace('BLANK2', particle_j)
                     if 'BLANK3' in line:
                         line = line.replace('BLANK3', particle_k)
+                    if 'useEvtGen' in line and not use_EVTGEN:
+                        line = ''
+                    if 'evtGenUsePHOTOS' in line and not use_EVTGEN:
+                        line = ''
+                    if 'evtGenModel' in line and not use_EVTGEN:
+                        line = ''
+                    elif 'evtGenModel' in line:
+                        line = line.replace('pick_model', particle_combination["evtgen_model"])
+
                     f_out.write(line)
 
             f = open('../BLANK.decay', 'r')
@@ -219,9 +231,9 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
             N = int(N_events/N_channels_total)
 
-            particle_i = particle_combination[0]
-            particle_j = particle_combination[1]
-            particle_k = particle_combination[2]
+            particle_i = particle_combination["decay"][0]
+            particle_j = particle_combination["decay"][1]
+            particle_k = particle_combination["decay"][2]
             rs_idx += 1
             print(
                 f"{rs_idx + 1}/{N_channels_total}, Running RapidSim for {particle_m} -> {particle_i} {particle_j} {particle_k}")
@@ -240,6 +252,9 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
         time_B = time.time()
 
     time_B_full = time.time()
+
+    if ".root" in output_name:
+        output_name = output_name[:-5]
 
     # os.system('rm dump.txt')
     os.system(f'hadd -fk {output_name}.root *_tree2.root')
