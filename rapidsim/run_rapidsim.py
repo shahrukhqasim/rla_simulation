@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import time
 import itertools
@@ -18,7 +19,35 @@ import pandas as pd
 # print(Particle.from_pdgid(-431))
 # quit()
 
+rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
+if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
+    rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
+
+
+def run_command(packed):
+    rs_idx, particle_m, particle_combination, N = packed
+    particle_i = particle_combination[0]
+    particle_j = particle_combination[1]
+    particle_k = particle_combination[2]
+
+    time_A = time.time()
+    os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
+    file = uproot.open(f'rs_{rs_idx}_tree.root')["DecayTree"]
+    keys = file.keys()
+    results = file.arrays(keys, library="np")
+    file.close()
+
+    results['mother_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_m)
+    results['particle_1_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_i)
+    results['particle_2_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_j)
+    results['particle_3_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_k)
+
+    file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
+    file2['DecayTree'] = results
+    file2.close()
+
 def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_name='output'):
+
     """
     Run RapidSim.
 
@@ -141,6 +170,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
         rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
 
+
     rs_idx = -1
 
     for particle_m in list(decay_channels.keys()):
@@ -183,6 +213,8 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     time_A_full = time.time()
     rs_idx = -1
     for particle_m in list(decay_channels.keys()):
+
+        commands = []
         for particle_combination in tqdm(decay_channels[particle_m]):
 
             N = int(N_events/N_channels_total)
@@ -190,28 +222,23 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
             particle_i = particle_combination[0]
             particle_j = particle_combination[1]
             particle_k = particle_combination[2]
-
             rs_idx += 1
             print(
                 f"{rs_idx + 1}/{N_channels_total}, Running RapidSim for {particle_m} -> {particle_i} {particle_j} {particle_k}")
-            time_A = time.time()
-            os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
-            file = uproot.open(f'rs_{rs_idx}_tree.root')["DecayTree"]
-            keys = file.keys()
-            results = file.arrays(keys, library="np")
-            file.close()
 
-            results['mother_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_m)
-            results['particle_1_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_i)
-            results['particle_2_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_j)
-            results['particle_3_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_k)
+            # run_command(rs_idx, particle_m, particle_combination, N)
+            commands += [(rs_idx, particle_m, particle_combination, N)]
 
-            file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
-            file2['DecayTree'] = results
-            file2.close()
+        num_processes = 20
+        pool = multiprocessing.Pool(processes=num_processes)
 
-            time_B = time.time()
-            
+        results = pool.map(run_command, commands)
+
+        pool.close()
+        pool.join()
+
+        time_B = time.time()
+
     time_B_full = time.time()
 
     # os.system('rm dump.txt')

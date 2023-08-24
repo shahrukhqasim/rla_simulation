@@ -1,0 +1,63 @@
+model_params:
+  name: 'MlpConditionalVAE_with_masses_v2'
+  data_feature_dim: [ 3, 3 ]
+  latent_dim: 64
+  conditional_feats: { 'momenta_mother_pp': [ 1, 3 ], 'particle_1_M': [ 1 ], 'particle_2_M': [ 1 ], 'particle_3_M': [ 1 ], 'mother_M_TRUE': [ 1 ] }
+
+exp_params:
+  adam_lr: 0.001
+  kld_weight: 0.00025
+  manual_seed: 1265
+  batch_size: 512
+
+trainer_params:
+  max_epochs: 1000
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: 0
+
+logging_params:
+  save_dir: "logs/"
+  name: "MlpConditionalVAE_with_masses_v2"
+
+data_params:
+  train_batch_size: 512
+  val_batch_size: 512
+  legacy_rotation: False
+  split_seed: 99
+  use_root_reader: True
+  num_workers: 0
+  load_together: 1000000
+  data_path:
+    train: "data/decay_modes_572.root"
+    validate: "data/two_modes_test.root"
+
+
+generate_params:
+  checkpoint_path: "logs/MlpConditionalVAE_with_decay_masses/version_3/checkpoints/last.ckpt"
+  pdf_prefix: "logs/MlpConditionalVAE_with_decay_masses/version_3/samples/gen_res"
+#  total_samples: 20000
+  batch_size: 512
+  predict_batch_size: 512
+  kld_weight: 0.00025
+
+
+plotter:
+  check_file_prefix: 'logs/plotter_checks/data_check'
+  ranges:
+    px_min: -3.
+    px_max: 3.
+    py_min: -3.
+    py_max: 3.
+    pz_min: -5.
+    pz_max: 5000.
+  unit: '[GeV]'
+
+# Conditions will be an array of strings or an array of arrays.
+# If its an array of arrays, the second axis will always be 2 and the second element will refer to what to render
+# TODO: Should change it to dict?
+  conditions: [
+    ['{momenta_mother}[:,0,2] < 1000','${p_m}_z$ < 1000'],
+    ['{particle_1_PID} == -11','At least one decay product is e+'],
+    ['np.logical_and({particle_1_PID} == 321, np.logical_and({particle_2_PID} == 321, np.logical_and({particle_3_PID} == -321, {mother_PID} == 411)))', '$D^+ -> K^+ K^+ K^-$'],
+    ['np.logical_and({particle_1_PID} == -11, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == +11, {mother_PID} == 411)))', '$D^+ -> e^+ e^+ e^-$'],
+  ]

@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import argh
 
 from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecayMomentaPreprocessor, PreProcessor, \
-    PostProcessor
+    PostProcessor, MomentaCatPreprocessor
 from rlasim.lib.plotting import ThreeBodyDecayPlotter
 
 Tensor = TypeVar('torch.tensor')
@@ -51,14 +51,15 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         assert type(batch) is dict
+        batch = self.to_32b(batch)
 
         self.curr_device = list(batch.values())[0].device
 
         batch_2 = {}
+        batch_2.update(batch)
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PreProcessor):
-                batch_2.update(preprocessor(batch))
-        batch_2.update(batch)
+                batch_2.update(preprocessor(batch_2))
 
         output = self.forward(batch_2)
 
@@ -111,25 +112,56 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         loader = self.trainer.datamodule.train_dataloader()
         all_data = []
         self.preprocessors = []
-        for idx, batch in enumerate(loader):
+        self.preprocessors.append(MomentaCatPreprocessor())
+        for idx, batch in tqdm(enumerate(loader)):
+            for pp in self.preprocessors:
+                batch.update(pp.forward(batch, direction=1))
             all_data.append(batch)
-        self.preprocessors.append(OnlineThreeBodyDecayMomentaPreprocessor(all_data))
 
-        print("X", len(self.preprocessors))
+            # A million samples are enough to estimate max and min
+            if idx * loader.batch_size >= 100000:
+                break
+
+        self.preprocessors.append(OnlineThreeBodyDecayMomentaPreprocessor(all_data))
 
 
     def on_train_start(self) -> None:
         self.setup_preprocessors()
 
+    def to_32b(self, tensor_dict):
+        return tensor_dict
+        # converted_dict = {}
+        # for key, tensor in tensor_dict.items():
+        #     if isinstance(tensor, np.ndarray):
+        #         if tensor.dtype == np.float64:
+        #             converted_dict[key] = tensor.astype(np.float32)
+        #         elif tensor.dtype == np.int64:
+        #             converted_dict[key] = tensor.astype(np.int32)
+        #         else:
+        #             converted_dict[key] = tensor
+        #     elif isinstance(tensor, torch.Tensor):
+        #         if tensor.dtype == torch.float64:
+        #             converted_dict[key] = tensor.float()
+        #         elif tensor.dtype == torch.int64:
+        #             converted_dict[key] = tensor.int()
+        #         else:
+        #             converted_dict[key] = tensor
+        #     else:
+        #         raise ValueError("Unsupported tensor type")
+        #
+        # return converted_dict
+
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         assert type(batch) is dict
+        batch = self.to_32b(batch)
         self.curr_device = list(batch.values())[0].device
 
         batch_2 = {}
+        batch_2.update(batch)
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PreProcessor):
-                batch_2.update(preprocessor(batch))
-        batch_2.update(batch)
+                batch_2.update(preprocessor(batch_2))
+        # batch_2.update(batch)
 
         results = self.forward(batch_2)
         train_loss = self.model.loss_function(results,
@@ -149,13 +181,14 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
         self.curr_device = list(batch.values())[0].device
+        batch = self.to_32b(batch)
 
         batch_2 = {}
-        print(self.preprocessors)
+        batch_2.update(batch)
+        print()
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PreProcessor):
-                batch_2.update(preprocessor(batch))
-        batch_2.update(batch)
+                batch_2.update(preprocessor(batch_2))
 
         output = self.forward(batch_2)
         val_loss = self.model.loss_function(output,
@@ -219,6 +252,7 @@ def main(config_file='configs/vae_conditional.yaml', predict=False):
         experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['exp_params'], config['plotter'])
         tb_logger = TensorBoardLogger(save_dir=config['logging_params']['save_dir'],
                                       name=config['model_params']['name'], )
+
         runner = Trainer(logger=tb_logger,
                          callbacks=[
                              LearningRateMonitor(),
@@ -228,6 +262,7 @@ def main(config_file='configs/vae_conditional.yaml', predict=False):
                                              save_last=True),
                          ],
                          **config['trainer_params'])
+
 
         Path(f"{tb_logger.log_dir}/samples").mkdir(exist_ok=True, parents=True)
         Path(f"{tb_logger.log_dir}/gsamples").mkdir(exist_ok=True, parents=True)
