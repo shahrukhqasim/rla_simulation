@@ -18,7 +18,7 @@ import pandas as pd
 # print(Particle.from_pdgid(-431))
 # quit()
 
-def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
+def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_name='output'):
     """
     Run RapidSim.
 
@@ -29,32 +29,13 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
     """
 
     if config_file is None:
-        particles = ["K", "mu", "p", "e"]
-
-        # Set the desired length of each combination
-        combination_length = 3
-
-        # Generate all combinations with repetitions allowed
-        all_combinations = list(itertools.product(particles, repeat=combination_length))
-
-        # Remove duplicates by converting each combination to a set
-        unique_combinations = {tuple(sorted(comb)) for comb in all_combinations}
-        unique_combinations = [(x[0]+'+', x[1]+'+', x[2]+'-') for x in unique_combinations]
-
-        # Convert back to a list of lists
-        unique_combinations = [list(comb) for comb in unique_combinations]
-        mother_particles = ["B+"]
-        num_sims = [10000 for _ in mother_particles]
 
         decay_channels = {}
+        decay_channels["B+"] = [["K+", "e+", "e-"]]
+        # decay_channels["B+"] = [["K+", "K+", "K-"]]
 
-        N_channels_total = 0
-        for mother_particle in mother_particles:
-            decay_channels[mother_particle] = []
-            for unique_combination in unique_combinations:
-                decay_channels[mother_particle].append(unique_combination)
-            N_channels_total += len(decay_channels[mother])
-
+        N_channels_total = 1
+        N_events = 1E4
 
     elif config_file == "produce_all":
         
@@ -153,7 +134,9 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
     os.mkdir('rs_output')
     os.chdir('rs_output')
 
-    print(f"Running {N_channels_total} channels")
+    try: print(f"Running {N_channels_total} channels")
+    except: pass
+
     rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
     if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
         rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
@@ -232,19 +215,19 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6):
     time_B_full = time.time()
 
     # os.system('rm dump.txt')
-    os.system('hadd -fk output.root *_tree2.root')
+    os.system(f'hadd -fk {output_name}.root *_tree2.root')
     if not dont_clean:
         os.system('rm *_tree.root')
         os.system('rm *_hists.root')
         os.system('rm *config')
         os.system('rm *decay')
-    os.system('mv output.root ../.')
+    os.system(f'mv {output_name}.root ../.')
     os.chdir(Path(os.getcwd()).parents[0])
     if not dont_clean:
         os.system('rm -r rs_output')
 
     print(f"\n\n\ntime: {time_B_full - time_A_full:.4f}")
-    os.system('ls -lh output.root')
+    os.system(f'ls -lh {output_name}.root')
 
 
 if __name__ == '__main__':

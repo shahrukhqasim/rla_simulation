@@ -9,3 +9,4 @@ tests/private_tests
 
 PIDcalib/*/*.pkl
 PIDcalib/*/*.pdf
+PIDcalib/*/*.npy
