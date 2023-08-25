@@ -36,7 +36,7 @@ particle_types["mu-"] = "lepton"
 particle_types["mu+"] = "lepton"
 particle_types["nue"] = "lepton_neutrino"
 particle_types["anti-nue"] = "lepton_neutrino"
-
+particle_types["gamma"] = "photon"
 
 
 
@@ -57,21 +57,27 @@ def run_command(packed):
     particle_k = particle_combination[2]
 
     time_A = time.time()
-    os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
+    try:
+        os.system(f'{rapid_sim_path} rs_{rs_idx} {N} 1 > dump.txt  ')
+    except:
+        print("RAPID SIM FAILED")
 
-    file = uproot.open(f'rs_{rs_idx}_tree.root')["DecayTree"]
-    keys = file.keys()
-    results = file.arrays(keys, library="np")
-    file.close()
+    try:
+        file = uproot.open(f'rs_{rs_idx}_tree.root')["DecayTree"]
+        keys = file.keys()
+        results = file.arrays(keys, library="np")
+        file.close()
 
-    results['mother_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_m)
-    results['particle_1_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_i)
-    results['particle_2_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_j)
-    results['particle_3_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_k)
+        results['mother_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_m)
+        results['particle_1_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_i)
+        results['particle_2_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_j)
+        results['particle_3_PID'] = np.zeros(len(results['mother_E']), dtype=np.int32) + get_pdgid(particle_k)
 
-    file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
-    file2['DecayTree'] = results
-    file2.close()
+        file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
+        file2['DecayTree'] = results
+        file2.close()
+    except:
+        print(f'rs_{rs_idx}_tree.root NOT PRESENT')
 
 def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_name='output'):
 
