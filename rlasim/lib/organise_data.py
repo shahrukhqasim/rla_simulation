@@ -18,6 +18,7 @@ from torch import nn
 
 from rlasim.lib.data_core import DictTensorDataset, tensors_dict_join, RootTensorDataset, RootTensorDataset2, \
     nbe_default_collate, RootBlockShuffledSubsetDataLoader
+from rlasim.lib.progress_bar import AsyncProgressBar
 
 
 def rotation_matrix_from_vectors_vectorised(vec1, vec2):
@@ -730,36 +731,47 @@ class MomentaCatPreprocessor(nn.Module, PreProcessor):
     def forward(self, sample, direction=1, on=None):
         if direction != 1:
             raise ValueError('MomentaCatPreprocessor is only a preprocessor.')
-
-        momenta = torch.stack([sample['particle_1_PX'], sample['particle_1_PY'],
-                               sample['particle_1_PZ'], sample['particle_2_PX'],
-                               sample['particle_2_PY'], sample['particle_2_PZ'],
-                               sample['particle_3_PX'], sample['particle_3_PY'],
-                               sample['particle_3_PZ']], dim=1)
-
-        momenta = momenta.reshape((len(sample['particle_1_PX']), 3, 3))
-
-        momenta_mother = torch.stack([sample['mother_PX_TRUE'],
-                             sample['mother_PY_TRUE'], sample['mother_PZ_TRUE']], dim=1)
-        momenta_mother = momenta_mother.reshape((len(sample['particle_1_PX']), 1, 3))
-
         sample_2 = {}
-        sample_2['momenta'] = momenta
-        sample_2['momenta_mother'] = momenta_mother
+
+        if 'particle_1_PX' in sample:
+            momenta = torch.stack([sample['particle_1_PX'], sample['particle_1_PY'],
+                                   sample['particle_1_PZ'], sample['particle_2_PX'],
+                                   sample['particle_2_PY'], sample['particle_2_PZ'],
+                                   sample['particle_3_PX'], sample['particle_3_PY'],
+                                   sample['particle_3_PZ']], dim=1)
+
+            momenta = momenta.reshape((len(sample['particle_1_PX']), 3, 3))
+
+            sample_2['momenta'] = momenta
+
+        if 'mother_PX_TRUE' in sample:
+            momenta_mother = torch.stack([sample['mother_PX_TRUE'],
+                                 sample['mother_PY_TRUE'], sample['mother_PZ_TRUE']], dim=1)
+            momenta_mother = momenta_mother.reshape((len(sample['particle_1_PX']), 1, 3))
+
+            sample_2['momenta_mother'] = momenta_mother
 
         return sample_2
 
 
 class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProcessor):
-    def __init__(self, estimation_sample):
+    def __init__(self, estimation_sample=None):
         super(OnlineThreeBodyDecayMomentaPreprocessor, self).__init__()
-        if type(estimation_sample) is list:
-            estimation_sample = tensors_dict_join(estimation_sample)
-        self.get_limits_from_samples(estimation_sample['momenta'], estimation_sample['momenta_mother'])
+        self.min_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)))
+        self.max_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)))
+        self.min_mother = torch.nn.Parameter(torch.zeros((1, 1, 3)))
+        self.max_mother = torch.nn.Parameter(torch.zeros((1, 1, 3)))
+
+        if estimation_sample is not None:
+            self.estimate(estimation_sample)
 
         # print(torch.min(estimation_sample['particle_3_PZ'], dim=0), torch.min(estimation_sample['mother_PZ_TRUE'], dim=0))
         # print(torch.min(estimation_sample['momenta'], dim=[0,1]), torch.min(estimation_sample['momenta_mother'], dim=0))
 
+    def estimate(self, estimation_sample):
+        if type(estimation_sample) is list:
+            estimation_sample = tensors_dict_join(estimation_sample)
+        self.get_limits_from_samples(estimation_sample['momenta'], estimation_sample['momenta_mother'])
 
     def forward(self, sample: dict, direction=1, on=None):
         """
@@ -828,46 +840,64 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
         sample_copy = sample * 1.0
         sample_copy[:, :, 2] = torch.log(sample_copy[:, :, 2] + 5.0)
         # From [B, 3, 3] to [3, 3]
-        self.min_decay_prods = min_func(sample_copy)
-        self.max_decay_prods = max_func(sample_copy)
+        self.min_decay_prods.data = min_func(sample_copy)
+        self.max_decay_prods.data = max_func(sample_copy)
 
         sample_mother_copy = sample_mother * 1.0
         sample_mother_copy[:, :, 2] = torch.log(sample_mother_copy[:, :, 2] + 5)
         # From [B, 3, 3] to [3, 3]
-        self.min_mother = min_func(sample_mother_copy)
-        self.max_mother = max_func(sample_mother_copy)
+        self.min_mother.data = min_func(sample_mother_copy)
+        self.max_mother.data = max_func(sample_mother_copy)
 
     def preprocess(self, sample, sample_mother):
+        min_decay_prods = self.min_decay_prods
+        max_decay_prods = self.max_decay_prods
+
+        min_mother = self.min_mother
+        max_mother = self.max_mother
+
         if sample.device != self.min_decay_prods.device:
-            self.min_decay_prods = self.min_decay_prods.to(sample.device)
-            self.max_decay_prods = self.max_decay_prods.to(sample.device)
+            min_decay_prods = self.min_decay_prods.to(sample.device)
+            max_decay_prods = self.max_decay_prods.to(sample.device)
 
-            self.min_mother = self.min_mother.to(sample.device)
-            self.max_mother = self.max_mother.to(sample.device)
-
+            min_mother = self.min_mother.to(sample.device)
+            max_mother = self.max_mother.to(sample.device)
 
         if sample is not None:
             sample = sample * 1.0
             sample[:, :, 2] = torch.log(sample[:, :, 2] + 5)
-            sample = ((sample - self.min_decay_prods) / (self.max_decay_prods - self.min_decay_prods)) * 2.0 - 1.0
+            sample = ((sample - min_decay_prods) / (max_decay_prods - min_decay_prods)) * 2.0 - 1.0
 
         if sample_mother is not None:
             sample_mother = sample_mother * 1.0
             sample_mother[:, :, 2] = torch.log(sample_mother[:, :, 2] + 5)
-            sample_mother = ((sample_mother - self.min_mother) / (self.max_mother - self.min_mother)) * 2.0 - 1.0
+            sample_mother = ((sample_mother - min_mother) / (max_mother - min_mother)) * 2.0 - 1.0
 
         return sample, sample_mother
 
     def postprocess(self, sample, sample_mother):
+        min_decay_prods = self.min_decay_prods
+        max_decay_prods = self.max_decay_prods
+
+        min_mother = self.min_mother
+        max_mother = self.max_mother
+
+        if sample.device != self.min_decay_prods.device:
+            min_decay_prods = self.min_decay_prods.to(sample.device)
+            max_decay_prods = self.max_decay_prods.to(sample.device)
+
+            min_mother = self.min_mother.to(sample.device)
+            max_mother = self.max_mother.to(sample.device)
+
         if sample is not None:
             sample = sample * 1
-            sample = (sample + 1) * 0.5 * (self.max_decay_prods - self.min_decay_prods) + self.min_decay_prods
+            sample = (sample + 1) * 0.5 * (max_decay_prods - min_decay_prods) + min_decay_prods
             sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
             sample = torch.nan_to_num(sample)
 
         if sample_mother is not None:
             sample_mother = sample_mother * 1
-            sample_mother = (sample_mother + 1) * 0.5 * (self.max_mother - self.min_mother) + self.min_mother
+            sample_mother = (sample_mother + 1) * 0.5 * (max_mother - min_mother) + min_mother
             sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
             sample_mother = torch.nan_to_num(sample_mother)
 
@@ -1063,6 +1093,25 @@ class ThreeBodyDecayDataset(LightningDataModule):
     def split(self, data, split_at):
         return data[:split_at], data[split_at:]
 
+    def _get_loader(self, data_param, batch_size):
+        if type(data_param) is str:
+            p = data_param
+            block_size = 10000
+            num_blocks = -1
+        elif type(data_param) is dict:
+            p = data_param['path']
+            num_blocks = data_param['num_blocks']
+            block_size = data_param['block_size']
+        else:
+            raise ValueError('The data param is of unknown type. It has to be either str showing the path of the'
+                             'data file or a dict containing element data_path containing the path of the data file'
+                             'and num_blocks and block size.')
+
+        return RootBlockShuffledSubsetDataLoader(p,
+                                                 block_size=block_size,
+                                                 num_blocks=num_blocks,
+                                                 batch_size=batch_size)
+
 
     def setup(self, stage: Optional[str] = None) -> None:
 
@@ -1081,67 +1130,48 @@ class ThreeBodyDecayDataset(LightningDataModule):
             self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
                                                                     generator=generator)
         else:
-            self.dataset_train = self.data_path['train']
             # self.dataset_train = RootTensorDataset(self.data_path['train'], 'DecayTree', cache_size=-1)
-            self.dataset_test = self.data_path['validate']
             # self.dataset_test = RootTensorDataset(self.data_path['validate'], 'DecayTree', cache_size=-1)
             # train_size = int(0.8 * len(full_dataset))
             # test_size = len(full_dataset) - train_size
+            self._train_loader = None
 
-
+            self._val_loader = None
 
             # generator = None if self.split_seed == -1 else torch.Generator().manual_seed(self.split_seed)
             # self.dataset_train, self.dataset_test = torch.utils.data.random_split(full_dataset, [train_size, test_size],
             #                                                                       generator=generator)
 
     def train_dataloader(self):
-        # dataloader = DataLoader(
-        #     self.dataset_train,
-        #     batch_size=self.train_batch_size,
-        #     num_workers=self.num_workers,
-        #     shuffle=False,
-        #     pin_memory=self.pin_memory,
-        # )
-        # print("train_dataloader() getting called.")
-        dataloader = RootBlockShuffledSubsetDataLoader(self.dataset_train,
-                                                       block_size=10000,
-                                                       num_blocks=100,
-                                                       batch_size=self.train_batch_size)
+        print("train_dataloader() getting called!")
 
-        return dataloader
+        if self._train_loader is None:
+            self._train_loader = self._get_loader(self.data_path['train'], self.train_batch_size)
+            self._train_loader.wait_to_load('Reading train data: ')
+        # self._train_loader.prepare_next_epoch()
+        return self._train_loader
+
+    def check_val_loader(self):
+        if self._val_loader is None:
+            self._val_loader = self._get_loader(self.data_path['validate'], self.val_batch_size)
+            self._val_loader.wait_to_load('Reading val data: ')
+
 
     def val_dataloader(self):
-        # x= DataLoader(
-        #     self.dataset_test,
-        #     batch_size=self.val_batch_size,
-        #     num_workers=self.num_workers,
-        #     shuffle=False,
-        #     pin_memory=self.pin_memory,
-        # )
-        # return x
-
-        dataloader = RootBlockShuffledSubsetDataLoader(self.dataset_test,
-                                                       block_size=10000,
-                                                       num_blocks=100,
-                                                       batch_size=self.train_batch_size)
-
-        return dataloader
+        self.check_val_loader()
+        return self._val_loader
 
 
-    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
+    def test_dataloader(self):
+        self.check_val_loader()
+        return self._val_loader
 
-    def predict_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return DataLoader(
-            self.dataset_test,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            shuffle=False,
-            pin_memory=self.pin_memory,
-        )
+    def predict_dataloader(self):
+        self.check_val_loader()
+        return self._val_loader
+
+    def exit(self):
+        if self._train_loader is not None:
+            self._train_loader.exit()
+        if self._val_loader is not None:
+            self._val_loader.exit()

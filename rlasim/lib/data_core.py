@@ -4,6 +4,8 @@ from typing import Dict, Union, Type, Tuple, Callable, Optional, Iterable
 
 import uproot
 
+from rlasim.lib.progress_bar import AsyncProgressBar
+
 torch_installed = True
 try:
     import torch
@@ -235,8 +237,8 @@ if torch_installed:
                         break
                     b = sampled_blocks.pop()
 
-                start = b * self.block_size
-                end = min((b + 1) * self.block_size, self.length_full)
+                start = b * self._block_size
+                end = min((b + 1) * self._block_size, self.length_full)
                 x = self.read_root_file(self.input_file, 'DecayTree', start, end)
                 if self.debug:
                     print("Done", len(data_read))
@@ -267,18 +269,19 @@ if torch_installed:
                 self.block_lock = threading.Lock()
 
                 if self.all_blocks is None:
-                    self.all_blocks = list(range(0, math.floor(self.length_full / self.block_size)))
+                    self.all_blocks = list(range(0, math.floor(self.length_full / self._block_size)))
                     random.shuffle(self.all_blocks)
-                elif len(self.all_blocks) < self.num_blocks:
+                elif len(self.all_blocks) < self._num_blocks:
                     prev_blocks = [x for x in self.all_blocks]
                     new_all_blocks = list(
-                        set(range(0, math.floor(self.length_full / self.block_size))) - set(prev_blocks))
+                        set(range(0, math.floor(self.length_full / self._block_size))) - set(prev_blocks))
                     random.shuffle(new_all_blocks)
                     self.all_blocks = prev_blocks + new_all_blocks
 
-                sampled_blocks = self.select_and_delete_elements(self.all_blocks, self.num_blocks)
+                sampled_blocks = self.select_and_delete_elements(self.all_blocks, self._num_blocks)
 
                 data_read = []
+                self._data_read_copy_for_monitoring_progress = data_read
                 num_threads = 4
 
                 threads = []
@@ -292,7 +295,8 @@ if torch_installed:
                 for thread in threads:
                     thread.join()
 
-                print("Took", time.time() - t1, "seconds.")
+                if self.debug:
+                    print("Took", time.time() - t1, "seconds.")
 
                 sampled_subset = tensors_dict_join(data_read)
                 sampled_subset = self.shuffle_dict_arrays(sampled_subset)
@@ -303,12 +307,12 @@ if torch_installed:
             self.reading_thread_main = threading.Thread(target=self._background_loading_thread, args=())
             self.reading_thread_main.start()
 
-        def __init__(self, input_file, block_size=4096, num_blocks=10):
-            self.block_size = block_size
-            self.num_blocks = num_blocks
+        def __init__(self, input_file, block_size=4096, num_blocks=10, debug=False):
+            self._block_size = block_size
+            self._num_blocks = num_blocks
             self.input_file = input_file
             self.kill_signal = False
-            self.debug = False
+            self.debug = debug
 
             # length = 1000000
             tree = uproot.open(input_file)['DecayTree']
@@ -320,64 +324,153 @@ if torch_installed:
             assert len(lens) == 1
             # self.length_full = min(length, list(lens)[0])
             self.length_full = list(lens)[0]
-            self.length_sampled = num_blocks * block_size
+
+            if self._num_blocks == -1:
+                self._num_blocks = self.length_full // self._block_size
+
+            if self.length_full // self._block_size < self._num_blocks:
+                warnings.warn('Too many blocks specified for the mentioned datafile. Using maximum num_blocks'
+                                     ' possible.')
+
+            self._num_blocks = min(self.length_full//self._block_size, self._num_blocks)
+
+            self.length_sampled = self._num_blocks * block_size
             self.sampled_subsets_queue = Queue()
 
             self.current_sampled_subset = None
 
             self.num_retrieved = 0
+            self.retrieved_mask = np.arange(self.length_sampled)
             self.load_subsets()
+
+        @property
+        def num_blocks(self):
+            return self._num_blocks
+
+        @property
+        def block_size(self):
+            return self._block_size
 
         def __len__(self):
             return self.length_sampled
 
-        def __getitem__(self, item):
+        def get_batch(self, batch):
+            assert type(batch) is np.ndarray
+            assert batch.dtype == np.int32 or batch.dtype == np.int64
+            assert len(batch.shape) == 1
+
+            if self.current_sampled_subset is None:
+                while self.sampled_subsets_queue.qsize() == 0:
+                    time.sleep(0.1)
+                self.current_sampled_subset = self.sampled_subsets_queue.get()
+
+            results = {key: self.current_sampled_subset[key][batch] for key in self.keys}
+            # self.num_retrieved += len(batch)
+            # self.retrieved_mask[batch] = 1
+
+            # if np.sum(self.retrieved_mask) >= self.length_sampled:
+            #     self.current_sampled_subset = None
+            #     # self.num_retrieved = 0
+            #     self.retrieved_mask = np.arange(self.length_sampled)
+
+            return results
+
+        def reset(self):
+            warnings.warn("No need to call reset. Call prepare_next_epoch when trying to get next subset instead.")
+            # self.retrieved_mask = np.arange(self.length_sampled)
+            # self.num_retrieved = 0
+
+
+        def get_no_masking(self, item):
             if self.current_sampled_subset is None:
                 while self.sampled_subsets_queue.qsize() == 0:
                     time.sleep(0.1)
                 self.current_sampled_subset = self.sampled_subsets_queue.get()
 
             results = {key: self.current_sampled_subset[key][item] for key in self.keys}
-            self.num_retrieved += 1
+            return results
 
-            if self.num_retrieved >= self.length_sampled:
-                self.current_sampled_subset = None
-                self.num_retrieved = 0
+
+        def __getitem__(self, item):
+            results = self.get_no_masking(item)
+            # self.num_retrieved += 1
+            #
+            # if self.num_retrieved >= self.length_sampled:
+            #     self.current_sampled_subset = None
+            #     self.num_retrieved = 0
 
             return results
 
-        def exit(self):
+        def exit(self, wait=True):
             self.kill_signal = True
+            if wait:
+                self.reading_thread_main.join()
+
+        def prepare_next_epoch(self):
+            self.current_sampled_subset = None
+
+        def get_read_progress(self):
+            if self.current_sampled_subset is not None or self.sampled_subsets_queue.qsize()>=1:
+                return 1.
+
+            return float(len(self._data_read_copy_for_monitoring_progress)) / self._num_blocks
+
 
 
     class RootBlockShuffledSubsetDataLoader(Iterable):
         def __init__(self, dataset: str, block_size, num_blocks, batch_size):
             # super().__init__(dataset)
-            self.dataset = RootBlockShuffledSubsetDataset(dataset, block_size=block_size, num_blocks=num_blocks)
+            self._dataset = RootBlockShuffledSubsetDataset(dataset, block_size=block_size, num_blocks=num_blocks)
 
-            self.length = math.floor(len(self.dataset) / batch_size)
+            self._batch_size = batch_size
+            self.length = math.floor(len(self._dataset) / self._batch_size)
             self.block_size = block_size
-            self.num_blocks = num_blocks
-            self.batch_size = batch_size
+
+        @property
+        def num_blocks(self):
+            return self._dataset.num_blocks
+
+        @property
+        def batch_size(self):
+            return self._batch_size
+
 
         def __len__(self):
             return self.length
 
+        def get_read_progress(self):
+            return self._dataset.get_read_progress()
+
+        def wait_to_load(self, prefix=''):
+            with AsyncProgressBar(1., lambda: self._dataset.get_read_progress(), prefix=prefix):
+                self._dataset.get_no_masking(0)
+
+        def reset(self):
+            self._dataset.reset()
+
+        def prepare_next_epoch(self):
+            print("Next epoch now.")
+            self._dataset.prepare_next_epoch()
+
         def __iter__(self):
             for i in range(self.length):
-                batch = []
-                for j in range(self.batch_size):
-                    batch += [self.dataset.__getitem__(i*self.batch_size + j)]
-                yield default_collate(batch)
+                indices = np.arange(self._batch_size) + (i * self._batch_size)
+                batch = self._dataset.get_batch(indices)
+                batch = {k:torch.tensor(v) for k,v in batch.items()}
+                yield batch
+            # self.prepare_next_epoch()
+            # batch = []
+            # for j in range(self.batch_size):
+            #     batch += [self.dataset.__getitem__(i*self.batch_size + j)]
+            # yield default_collate(batch)
 
         def exit(self):
-            self.dataset.exit()
+            self._dataset.exit()
 
     class RootTensorDataset(Dataset):
-        def __init__(self, file, tree_name, cache_size=1000):
+        def __init__(self, file, tree_name, cache_size=-1):
             self.tree = uproot.open(file)[tree_name]
             self.keys = self.tree.keys()
-            self.cache_size = cache_size
             self.cache = []
             self.cache_start = 0
             self.cache_end = 0
@@ -389,9 +482,11 @@ if torch_installed:
             assert len(lens) == 1
             self.length = list(lens)[0]
 
+            self.cache_size = cache_size if cache_size != -1 else self.length
             self.cache_size = min(self.cache_size, self.length)
 
         def _load_cache(self, item):
+            print("Loading cache")
             self.cache_start = item
             self.cache_end = min(self.length, self.cache_start + self.cache_size)
             self.cache = self.tree.arrays(self.keys, library="np", entry_start=self.cache_start,
@@ -406,6 +501,7 @@ if torch_installed:
                 else:
                     cache_2[k] = v
             self.cache = cache_2
+            print("Cache loaded")
 
         def __getitem__(self, item):
             if item < self.cache_start or item >= self.cache_end:
