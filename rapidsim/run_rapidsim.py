@@ -94,7 +94,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
         decay_channels = {}
         decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
-        # decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"PHSP"}]
+        decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
 
         N_channels_total = 1
         N_events = 1E5
@@ -320,16 +320,16 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
                 f"{rs_idx + 1}/{N_channels_total}, Running RapidSim for {particle_m} -> {particle_i} {particle_j} {particle_k} with model: {particle_combination['evtgen_model']}")
 
             # print(particle_combination_idx, particle_combination["decay"])
-            # run_command((rs_idx, particle_m, particle_combination["decay"], N))
-            commands += [(rs_idx, particle_m, particle_combination["decay"], N)]
+            run_command((rs_idx, particle_m, particle_combination["decay"], N))
+            # commands += [(rs_idx, particle_m, particle_combination["decay"], N)]
 
-        num_processes = 20
-        pool = multiprocessing.Pool(processes=num_processes)
+        # num_processes = 20
+        # pool = multiprocessing.Pool(processes=num_processes)
 
-        results = pool.map(run_command, commands)
+        # results = pool.map(run_command, commands)
 
-        pool.close()
-        pool.join()
+        # pool.close()
+        # pool.join()
 
         time_B = time.time()
 

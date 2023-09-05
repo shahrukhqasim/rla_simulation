@@ -35,15 +35,16 @@ data_params:
       num_blocks: 100
       block_size: 10000
     validate:
-      path: "data/two_modes_test.root"
+      # path: "data/two_modes_test.root"
+      path: "rapidsim/output.root"
       num_blocks: 100
       block_size: 10000
 
 checkpoint:
-  path: "logs/MlpConditionalVAE_with_masses_v2/version_19/checkpoints/last.ckpt"
+  path: "/users/am13743/rla_simulation/last.ckpt"
 
 generate_params:
-  pdf_prefix: "logs/MlpConditionalVAE_with_masses_v2/version_19/samples/gen_res"
+  pdf_prefix: ""
   batch_size: 1024
   predict_batch_size: 1024
   kld_weight: 0.00025
