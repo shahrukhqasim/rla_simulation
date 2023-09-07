@@ -6,6 +6,8 @@ data
 .DS_Store
 *.pyc
 tests/private_tests
+*.root
+
 
 PIDcalib/*/*.pkl
 PIDcalib/*/*.pdf
