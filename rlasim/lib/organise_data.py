@@ -754,9 +754,185 @@ class MomentaCatPreprocessor(nn.Module, PreProcessor):
         return sample_2
 
 
-class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProcessor):
+def compute_dalitz_masses_2(vec4, sample, nan_to_num=True, squared=False, _engine='torch'):
+    # This is recomputing it twice at least. This is fine as these things are fast but could be cleaned up later on.
+    sample_2 = {}
+    # sample_2.update(sample)
+    for particle_idx, particle in enumerate(['1', '2', '3']):
+        for coordinate_idx, coordinate in enumerate(['PX', 'PY', 'PZ']):
+            sample_2[f'particle_{particle}_{coordinate}'] = vec4[
+                                                                   :, particle_idx, coordinate_idx]
+
+                # # Check
+                # if coordinate_idx == 2:
+                #     sample_2[f'particle_{particle}_{coordinate}_DECODED']=sample_2['momenta_reconstructed_upp'][
+                #                                                        :, particle_idx, coordinate_idx]*0.0
+
+    if _engine == 'np':
+        engine = np
+    elif _engine == 'torch':
+        engine = torch
+    else:
+        raise RuntimeError("Unknown engine")
+
+    pe_1 = engine.sqrt(
+        sample['particle_1_M'] ** 2 + sample_2[f'particle_1_PX'] ** 2 + sample_2[f'particle_1_PY'] ** 2 + sample_2[
+            f'particle_1_PZ'] ** 2)
+    pe_2 = engine.sqrt(
+        sample['particle_2_M'] ** 2 + sample_2[f'particle_2_PX'] ** 2 + sample_2[f'particle_2_PY'] ** 2 + sample_2[
+            f'particle_2_PZ'] ** 2)
+    pe_3 = engine.sqrt(
+        sample['particle_3_M'] ** 2 + sample_2[f'particle_3_PX'] ** 2 + sample_2[f'particle_3_PY'] ** 2 + sample_2[
+            f'particle_3_PZ'] ** 2)
+
+    pe = pe_3 + pe_2
+    px = sample_2[f'particle_3_PX'] + sample_2[f'particle_2_PX']
+    py = sample_2[f'particle_3_PY'] + sample_2[f'particle_2_PY']
+    pz = sample_2[f'particle_3_PZ'] + sample_2[f'particle_2_PZ']
+    # p_32 = vector.obj(px=px, py=py, pz=pz, E=pe)
+
+    mass_32 = pe ** 2 - px ** 2 - py ** 2 - pz ** 2
+    if not squared:
+        mass_32 = engine.sqrt(mass_32)
+
+    pe = pe_1 + pe_3
+    px = sample_2[f'particle_1_PX'] + sample_2[f'particle_3_PX']
+    py = sample_2[f'particle_1_PY'] + sample_2[f'particle_3_PY']
+    pz = sample_2[f'particle_1_PZ'] + sample_2[f'particle_3_PZ']
+    # p_13 = vector.obj(px=px, py=py, pz=pz, E=pe)
+
+    mass_13 = pe ** 2 - px ** 2 - py ** 2 - pz ** 2
+    if not squared:
+        mass_13 = engine.sqrt(mass_13)
+
+    if nan_to_num:
+        mass_13 = engine.nan_to_num(mass_13)
+        mass_32 = engine.nan_to_num(mass_32)
+
+    return mass_13, mass_32
+
+def compute_parent_mass(sample, tag, nan_to_num=False, _engine='torch', reco_var='momenta_reconstructed_upp'):
+
+    if _engine == 'np':
+        engine = np
+    elif _engine == 'torch':
+        engine = torch
+    else:
+        raise RuntimeError("Unknown engine")
+
+    sample_2 = {}
+    sample_2.update(sample)
+
+    for particle_idx, particle in enumerate(['1', '2', '3']):
+        for coordinate_idx, coordinate in enumerate(['PX', 'PY', 'PZ']):
+
+            if reco_var in sample.keys():
+                sample_2[f'particle_{particle}_{coordinate}_DECODED'] = sample_2[reco_var][
+                                                                       :, particle_idx, coordinate_idx]
+            if 'momenta_upp' in sample.keys():
+                sample_2[f'particle_{particle}_{coordinate}'] = sample_2['momenta_upp'][
+                                                                       :, particle_idx, coordinate_idx]
+
+    sample = sample_2
+
+    pe_1 = engine.sqrt(
+        sample_2['particle_1_M'] ** 2 + sample[f'particle_1_PX{tag}'] ** 2 + sample[f'particle_1_PY{tag}'] ** 2 + sample[
+            f'particle_1_PZ{tag}'] ** 2)
+    pe_2 = engine.sqrt(
+        sample_2['particle_2_M'] ** 2 + sample[f'particle_2_PX{tag}'] ** 2 + sample[f'particle_2_PY{tag}'] ** 2 + sample[
+            f'particle_2_PZ{tag}'] ** 2)
+    pe_3 = engine.sqrt(
+        sample_2['particle_3_M'] ** 2 + sample[f'particle_3_PX{tag}'] ** 2 + sample[f'particle_3_PY{tag}'] ** 2 + sample[
+            f'particle_3_PZ{tag}'] ** 2)
+
+    pe = pe_1 + pe_2 + pe_3
+    px = sample[f'particle_1_PX{tag}'] + sample[f'particle_2_PX{tag}'] + sample[f'particle_3_PX{tag}']
+    py = sample[f'particle_1_PY{tag}'] + sample[f'particle_2_PY{tag}'] + sample[f'particle_3_PY{tag}']
+    pz = sample[f'particle_1_PZ{tag}'] + sample[f'particle_2_PZ{tag}'] + sample[f'particle_3_PZ{tag}']
+
+    B_mass = engine.sqrt(pe ** 2 - px ** 2 - py ** 2 - pz ** 2)
+    if tag == '':
+        tag = '_DECODED'
+    # print("YYY", tag, '%#05.5f'%float(engine.mean(pe)), '%#05.5f'%float(engine.mean(px)), '%#05.5f'%float(engine.mean(py)), '%#05.5f'%float(engine.mean(pz)), '%#05.5f'%float(engine.mean(sample[f'particle_3_PZ{tag}'])))
+    return B_mass
+
+def compute_dalitz_masses(sample, tag, nan_to_num=True, squared=False, _engine='torch', reco_var='momenta_reconstructed_upp'):
+    # This is recomputing it twice at least. This is fine as these things are fast but could be cleaned up later on.
+    sample_2 = {}
+    sample_2.update(sample)
+    # sample_2.pop('particle_1_PX')
+    # sample_2.pop('particle_1_PY')
+    # sample_2.pop('particle_1_PZ')
+    # sample_2.pop('particle_2_PX')
+    # sample_2.pop('particle_2_PY')
+    # sample_2.pop('particle_2_PZ')
+    # sample_2.pop('particle_3_PX')
+    # sample_2.pop('particle_3_PY')
+    # sample_2.pop('particle_3_PZ')
+    for particle_idx, particle in enumerate(['1', '2', '3']):
+        for coordinate_idx, coordinate in enumerate(['PX', 'PY', 'PZ']):
+
+            if reco_var in sample.keys():
+                sample_2[f'particle_{particle}_{coordinate}_DECODED'] = sample_2[reco_var][
+                                                                       :, particle_idx, coordinate_idx]
+            if 'momenta_upp' in sample.keys():
+                sample_2[f'particle_{particle}_{coordinate}'] = sample_2['momenta_upp'][
+                                                                       :, particle_idx, coordinate_idx]
+
+            # # Check
+            # if coordinate_idx == 2:
+            #     sample_2[f'particle_{particle}_{coordinate}_DECODED']=sample_2['momenta_reconstructed_upp'][
+            #                                                        :, particle_idx, coordinate_idx]*0.0
+
+    if _engine == 'np':
+        engine = np
+    elif _engine == 'torch':
+        engine = torch
+    else:
+        raise RuntimeError("Unknown engine")
+
+    pe_1 = engine.sqrt(
+        sample_2['particle_1_M'] ** 2 + sample_2[f'particle_1_PX{tag}'] ** 2 + sample_2[f'particle_1_PY{tag}'] ** 2 + sample_2[
+            f'particle_1_PZ{tag}'] ** 2)
+    pe_2 = engine.sqrt(
+        sample_2['particle_2_M'] ** 2 + sample_2[f'particle_2_PX{tag}'] ** 2 + sample_2[f'particle_2_PY{tag}'] ** 2 + sample_2[
+            f'particle_2_PZ{tag}'] ** 2)
+    pe_3 = engine.sqrt(
+        sample_2['particle_3_M'] ** 2 + sample_2[f'particle_3_PX{tag}'] ** 2 + sample_2[f'particle_3_PY{tag}'] ** 2 + sample_2[
+            f'particle_3_PZ{tag}'] ** 2)
+
+    pe = pe_3 + pe_2
+    px = sample_2[f'particle_3_PX{tag}'] + sample_2[f'particle_2_PX{tag}']
+    py = sample_2[f'particle_3_PY{tag}'] + sample_2[f'particle_2_PY{tag}']
+    pz = sample_2[f'particle_3_PZ{tag}'] + sample_2[f'particle_2_PZ{tag}']
+    # p_32 = vector.obj(px=px, py=py, pz=pz, E=pe)
+
+    mass_32 = pe ** 2 - px ** 2 - py ** 2 - pz ** 2
+    if not squared:
+        mass_32 = engine.sqrt(mass_32)
+
+    pe = pe_1 + pe_3
+    px = sample_2[f'particle_1_PX{tag}'] + sample_2[f'particle_3_PX{tag}']
+    py = sample_2[f'particle_1_PY{tag}'] + sample_2[f'particle_3_PY{tag}']
+    pz = sample_2[f'particle_1_PZ{tag}'] + sample_2[f'particle_3_PZ{tag}']
+    # p_13 = vector.obj(px=px, py=py, pz=pz, E=pe)
+
+    mass_13 = pe ** 2 - px ** 2 - py ** 2 - pz ** 2
+    if not squared:
+        mass_13 = engine.sqrt(mass_13)
+
+    if nan_to_num:
+        mass_13 = engine.nan_to_num(mass_13)
+        mass_32 = engine.nan_to_num(mass_32)
+
+    return mass_13, mass_32
+
+
+
+
+class OnlineThreeBodyDecayMomentaPreprocessor2(nn.Module, PreProcessor, PostProcessor):
     def __init__(self, estimation_sample=None):
-        super(OnlineThreeBodyDecayMomentaPreprocessor, self).__init__()
+        super(OnlineThreeBodyDecayMomentaPreprocessor2, self).__init__()
         self.min_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)))
         self.max_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)))
         self.min_mother = torch.nn.Parameter(torch.zeros((1, 1, 3)))
@@ -797,6 +973,172 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
                 key_upp_momenta = 'momenta_upp'
                 key_upp_momenta_mother = 'momenta_mother_upp'
             elif on == 'sampled':
+                key_momenta = 'momenta_pp_sampled'
+                key_momenta_mother = None
+                key_upp_momenta = 'momenta_sampled_upp'
+                key_upp_momenta_mother = None
+            elif on == 'reconstructed':
+                key_momenta = 'momenta_pp_reconstructed'
+                key_momenta_mother = None
+                key_upp_momenta = 'momenta_reconstructed_upp'
+                key_upp_momenta_mother = None
+            else:
+                raise ValueError('Illegal value of on')
+
+            # print(sample.keys())
+            momenta_unpreprocessed, momenta_mother_unpreprocessed =  self.postprocess(sample[key_momenta], sample[key_momenta_mother] if key_momenta_mother is not None else None)
+            # # Check
+            # momenta_unpreprocessed, momenta_mother_unpreprocessed = sample[key_momenta], sample[
+            #     key_momenta_mother] if key_momenta_mother is not None else None
+
+            result_dict = {
+                key_upp_momenta: momenta_unpreprocessed
+            }
+            if momenta_mother_unpreprocessed is not None:
+                result_dict[key_upp_momenta_mother] = momenta_mother_unpreprocessed
+            return result_dict
+        else:
+            raise ValueError('Direction value invalid.')
+
+    def get_limits_from_samples(self, sample, sample_mother):
+        def min_func(x):
+            x,_ = torch.min(x, dim=0, keepdim=True)
+            x = torch.where(x<0, x * 1.1, x * 0.9)
+            return x
+        def max_func(x):
+            x,_ = torch.max(x, dim=0, keepdim=True)
+            x = torch.where(x<0, x * 0.9, x * 1.1)
+            return x
+
+        assert len(sample.shape) == 3
+        assert sample.shape[1] == 3
+        assert sample.shape[2] == 3
+
+        assert len(sample_mother.shape) == 3
+        assert sample_mother.shape[1] == 1
+        assert sample_mother.shape[2] == 3
+
+        sample_copy = sample * 1.0
+        sample_copy[:, :, 2] = torch.log(sample_copy[:, :, 2] + 5.0)
+        # From [B, 3, 3] to [3, 3]
+        self.min_decay_prods.data = min_func(sample_copy)
+        self.max_decay_prods.data = max_func(sample_copy)
+
+        sample_mother_copy = sample_mother * 1.0
+        sample_mother_copy[:, :, 2] = torch.log(sample_mother_copy[:, :, 2] + 5)
+        # From [B, 3, 3] to [3, 3]
+        self.min_mother.data = min_func(sample_mother_copy)
+        self.max_mother.data = max_func(sample_mother_copy)
+
+    def preprocess(self, sample, sample_mother):
+        return sample, sample_mother
+
+        min_decay_prods = self.min_decay_prods
+        max_decay_prods = self.max_decay_prods
+
+        min_mother = self.min_mother
+        max_mother = self.max_mother
+
+        if sample.device != self.min_decay_prods.device:
+            min_decay_prods = self.min_decay_prods.to(sample.device)
+            max_decay_prods = self.max_decay_prods.to(sample.device)
+
+            min_mother = self.min_mother.to(sample.device)
+            max_mother = self.max_mother.to(sample.device)
+
+        if sample is not None:
+            sample = sample * 1.0
+            sample[:, :, 2] = torch.log(sample[:, :, 2] + 5)
+            sample = ((sample - min_decay_prods) / (max_decay_prods - min_decay_prods)) * 2.0 - 1.0
+
+        if sample_mother is not None:
+            sample_mother = sample_mother * 1.0
+            sample_mother[:, :, 2] = torch.log(sample_mother[:, :, 2] + 5)
+            sample_mother = ((sample_mother - min_mother) / (max_mother - min_mother)) * 2.0 - 1.0
+
+        return sample, sample_mother
+
+    def postprocess(self, sample, sample_mother):
+        return sample, sample_mother
+
+        min_decay_prods = self.min_decay_prods
+        max_decay_prods = self.max_decay_prods
+
+        min_mother = self.min_mother
+        max_mother = self.max_mother
+
+        if sample.device != self.min_decay_prods.device:
+            min_decay_prods = self.min_decay_prods.to(sample.device)
+            max_decay_prods = self.max_decay_prods.to(sample.device)
+
+            min_mother = self.min_mother.to(sample.device)
+            max_mother = self.max_mother.to(sample.device)
+
+        if sample is not None:
+            sample = sample * 1
+            sample = (sample + 1) * 0.5 * (max_decay_prods - min_decay_prods) + min_decay_prods
+            sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
+            sample = torch.nan_to_num(sample)
+
+        if sample_mother is not None:
+            sample_mother = sample_mother * 1
+            sample_mother = (sample_mother + 1) * 0.5 * (max_mother - min_mother) + min_mother
+            sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
+            sample_mother = torch.nan_to_num(sample_mother)
+
+        return sample, sample_mother
+
+class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProcessor):
+    def __init__(self, estimation_sample=None):
+        super(OnlineThreeBodyDecayMomentaPreprocessor, self).__init__()
+        self.min_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)), requires_grad=False)
+        self.max_decay_prods = torch.nn.Parameter(torch.zeros((1, 3,3)), requires_grad=False)
+        self.min_mother = torch.nn.Parameter(torch.zeros((1, 1, 3)), requires_grad=False)
+        self.max_mother = torch.nn.Parameter(torch.zeros((1, 1, 3)), requires_grad=False)
+
+        if estimation_sample is not None:
+            self.estimate(estimation_sample)
+
+        # print(torch.min(estimation_sample['particle_3_PZ'], dim=0), torch.min(estimation_sample['mother_PZ_TRUE'], dim=0))
+        # print(torch.min(estimation_sample['momenta'], dim=[0,1]), torch.min(estimation_sample['momenta_mother'], dim=0))
+
+    def estimate(self, estimation_sample):
+        if type(estimation_sample) is list:
+            estimation_sample = tensors_dict_join(estimation_sample)
+        self.get_limits_from_samples(estimation_sample['momenta'], estimation_sample['momenta_mother'])
+
+    def forward(self, sample: dict, direction=1, on=None):
+        """
+        :param data: dict
+        :param direction: 1 if forward, -1 if reverse
+        :param on: only for postprocessing, 'sampled' for postprocessing sampled, 'reconstructed' for postprocessing
+                   reconstructed output
+        :return:
+        """
+
+        assert type(sample) is dict
+
+        if direction == 1:
+
+            # # Check
+            # momenta_preprocessed, momenta_mother_preprocessed = sample['momenta'], sample['momenta_mother']
+            # return {
+            #     'momenta_pp': momenta_preprocessed,
+            #     'momenta_mother_pp': momenta_mother_preprocessed,
+            # }
+
+            momenta_preprocessed, momenta_mother_preprocessed = self.preprocess(sample['momenta'], sample['momenta_mother'])
+            return {
+                'momenta_pp': momenta_preprocessed,
+                'momenta_mother_pp': momenta_mother_preprocessed,
+            }
+        elif direction == -1:
+            if on is None:
+                key_momenta = 'momenta_pp'
+                key_momenta_mother = 'momenta_mother_pp'
+                key_upp_momenta = 'momenta_upp'
+                key_upp_momenta_mother = 'momenta_mother_upp'
+            elif on == 'sampled':
                 key_momenta = 'momenta_sampled'
                 key_momenta_mother = None
                 key_upp_momenta = 'momenta_sampled_upp'
@@ -810,6 +1152,10 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
                 raise ValueError('Illegal value of on')
 
             momenta_unpreprocessed, momenta_mother_unpreprocessed =  self.postprocess(sample[key_momenta], sample[key_momenta_mother] if key_momenta_mother is not None else None)
+            # # Check
+            # momenta_unpreprocessed, momenta_mother_unpreprocessed = sample[key_momenta], sample[
+            #     key_momenta_mother] if key_momenta_mother is not None else None
+
             result_dict = {
                 key_upp_momenta: momenta_unpreprocessed
             }
@@ -866,10 +1212,12 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
         if sample is not None:
             sample = sample * 1.0
             sample[:, :, 2] = torch.log(sample[:, :, 2] + 5)
+            # sample[:, :, 2] = (sample[:, :, 2] + 5)
             sample = ((sample - min_decay_prods) / (max_decay_prods - min_decay_prods)) * 2.0 - 1.0
 
         if sample_mother is not None:
             sample_mother = sample_mother * 1.0
+            # sample_mother[:, :, 2] = (sample_mother[:, :, 2] + 5)
             sample_mother[:, :, 2] = torch.log(sample_mother[:, :, 2] + 5)
             sample_mother = ((sample_mother - min_mother) / (max_mother - min_mother)) * 2.0 - 1.0
 
@@ -893,12 +1241,14 @@ class OnlineThreeBodyDecayMomentaPreprocessor(nn.Module, PreProcessor, PostProce
             sample = sample * 1
             sample = (sample + 1) * 0.5 * (max_decay_prods - min_decay_prods) + min_decay_prods
             sample[:, :, 2] = torch.exp(sample[:, :, 2]) - 5
+            # sample[:, :, 2] = (sample[:, :, 2]) - 5
             sample = torch.nan_to_num(sample)
 
         if sample_mother is not None:
             sample_mother = sample_mother * 1
             sample_mother = (sample_mother + 1) * 0.5 * (max_mother - min_mother) + min_mother
             sample_mother[:, :, 2] = torch.exp(sample_mother[:, :, 2]) - 5
+            # sample_mother[:, :, 2] = (sample_mother[:, :, 2]) - 5
             sample_mother = torch.nan_to_num(sample_mother)
 
         return sample, sample_mother
@@ -917,6 +1267,7 @@ class ThreeBodyDecayDataset(LightningDataModule):
             use_root_reader = False,
             load_together=200000,
             shuffle=False,
+            engine = 'torch',
             **kwargs,
     ):
         super().__init__()
@@ -928,12 +1279,16 @@ class ThreeBodyDecayDataset(LightningDataModule):
         self.pin_memory = pin_memory
         self.train_test_split = train_test_split
         self.preprocessors = []
+        self.engine = engine
 
         self.legacy_rotation = legacy_rotation
         self.split_seed = split_seed
         self.use_root_reader = use_root_reader
         self.load_together = load_together
         self.shuffle = shuffle # Only set to true if the whole dataset can be loaded into memory
+
+        self._train_loader = None
+        self._val_loader = None
 
     def get_data_simple(self, file):
         print("Attempting eta load")
@@ -1110,7 +1465,8 @@ class ThreeBodyDecayDataset(LightningDataModule):
         return RootBlockShuffledSubsetDataLoader(p,
                                                  block_size=block_size,
                                                  num_blocks=num_blocks,
-                                                 batch_size=batch_size)
+                                                 batch_size=batch_size,
+                                                 engine=self.engine)
 
 
     def setup(self, stage: Optional[str] = None) -> None:

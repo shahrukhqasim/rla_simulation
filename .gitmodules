@@ -1,0 +1,3 @@
+[submodule "sylvester-flows"]
+	path = sylvester-flows
+	url = git@github.com:riannevdberg/sylvester-flows.git

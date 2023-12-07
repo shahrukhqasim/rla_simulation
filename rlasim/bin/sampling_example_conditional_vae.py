@@ -23,9 +23,6 @@ def main(config_file='configs/vae_conditional_7.yaml', only_summary=False, data_
 	except yaml.YAMLError as exc:
 		print(exc)
 		exit()
-	
-	if data_file != None:
-		config['data_params']['data_path']['validate']['path'] = data_file
 
 	vae_network = MlpConditionalVAE(**config["model_params"])
 	experiment = ConditionalThreeBodyDecayVaeSimExperiment(vae_network, config['generate_params'], config['plotter'])
@@ -58,8 +55,6 @@ def main(config_file='configs/vae_conditional_7.yaml', only_summary=False, data_
 	plot_summaries(all_results)
 
 	print("All done, exiting...")
-	os._exit(0)
-
 
 	# This loader starts some threads in the background so you should also exit it in the end.
 	# This might take O(10s) but you can kill the program as well.

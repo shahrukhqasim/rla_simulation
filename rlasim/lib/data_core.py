@@ -16,6 +16,7 @@ except:
 import numpy as np
 from particle import Particle
 import warnings
+import tensorflow as tf
 
 
 def get_pdgid(name_):
@@ -410,7 +411,7 @@ if torch_installed:
             self.current_sampled_subset = None
 
         def get_read_progress(self):
-            if self.current_sampled_subset is not None or self.sampled_subsets_queue.qsize()>=1:
+            if self.sampled_subsets_queue.qsize() >= 1:
                 return 1.
 
             return float(len(self._data_read_copy_for_monitoring_progress)) / self._num_blocks
@@ -418,13 +419,18 @@ if torch_installed:
 
 
     class RootBlockShuffledSubsetDataLoader(Iterable):
-        def __init__(self, dataset: str, block_size, num_blocks, batch_size):
+        def __init__(self, dataset: str, block_size, num_blocks, batch_size, engine='torch'):
             # super().__init__(dataset)
             self._dataset = RootBlockShuffledSubsetDataset(dataset, block_size=block_size, num_blocks=num_blocks)
 
             self._batch_size = batch_size
             self.length = math.floor(len(self._dataset) / self._batch_size)
             self.block_size = block_size
+            self.engine = engine
+            if self.engine == 'torch':
+                self.fn_to_tensor = lambda x: torch.tensor(x)
+            elif self.engine == 'tf':
+                self.fn_to_tensor = lambda x: tf.convert_to_tensor(x)
 
         @property
         def num_blocks(self):
@@ -456,7 +462,7 @@ if torch_installed:
             for i in range(self.length):
                 indices = np.arange(self._batch_size) + (i * self._batch_size)
                 batch = self._dataset.get_batch(indices)
-                batch = {k:torch.tensor(v) for k,v in batch.items()}
+                batch = {k:self.fn_to_tensor(v) for k,v in batch.items()}
                 yield batch
             # self.prepare_next_epoch()
             # batch = []
@@ -494,9 +500,9 @@ if torch_installed:
 
             cache_2 = {}
             for k,v in self.cache.items():
-                if v.dtype==np.float64:
+                if v.dtype == np.float64:
                     cache_2[k] = v.astype(np.float32)
-                elif v.dtype==np.int64:
+                elif v.dtype == np.int64:
                     cache_2[k] = v.astype(np.int32)
                 else:
                     cache_2[k] = v

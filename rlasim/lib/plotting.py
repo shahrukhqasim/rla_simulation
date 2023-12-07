@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -552,22 +554,82 @@ def plot_x_y_yerr(ax, data, limits=None, bins=50, label=None, c='tab:blue', mark
 	return x_points, y_points, yerr_points, [np.amin(hist_i[1]),np.amax(hist_i[1])]
 
 
-def plot_summaries(all_results):
+def plot_latent_space(samples, path='latent_space_'):
+	if type(samples) is list:
+		samples = tensors_dict_join(samples)
+	data_samples_2 = {}
+	for k, v in samples.items():
+		if isinstance(v, torch.Tensor):
+			data_samples_2[k] = v.cpu().numpy()
+		else:
+			data_samples_2[k] = v
+	samples = data_samples_2
 
-	array_PID = np.asarray([all_results['particle_1_PID'].detach().numpy(), all_results['particle_2_PID'].detach().numpy(), all_results['particle_3_PID'].detach().numpy()])
+	mu = samples['mu']
+	log_var = samples['log_var']
+
+	num_dimensions = mu.shape[1]
+
+	dim_max = 0
+
+	pdf = PdfPages(path+'mu.pdf')
+	pdf2 = PdfPages(path+'log_var.pdf')
+
+	for i in range(math.ceil(num_dimensions / 16)):
+		fig, axs = plt.subplots(4, 4, figsize=(10, 10))
+		axs = axs.flatten()
+
+		fig2, axs2 = plt.subplots(4, 4, figsize=(10, 10))
+		axs2 = axs2.flatten()
+
+		for i in range(16):
+			axs[i].hist(mu[:, dim_max], bins=100)
+			axs[i].set_xlabel('mu [dim %d]'%dim_max)
+
+			axs2[i].hist(log_var[:, dim_max], bins=100)
+			axs2[i].set_xlabel('log_var [dim %d]'%dim_max)
+
+			dim_max += 1
+
+			if dim_max >= num_dimensions:
+				break
+
+		pdf.savefig(fig)
+		pdf2.savefig(fig2)
+
+		if dim_max >= num_dimensions:
+			break
+
+	pdf.close()
+	pdf2.close()
+
+def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
+	if type(all_results) is list:
+		all_results = tensors_dict_join(all_results)
+	data_samples_2 = {}
+	for k, v in all_results.items():
+		if isinstance(v, torch.Tensor):
+			data_samples_2[k] = v.cpu().numpy()
+		else:
+			data_samples_2[k] = v
+	all_results = data_samples_2
+
+
+	array_PID = np.asarray([all_results['particle_1_PID'], all_results['particle_2_PID'], all_results['particle_3_PID']])
 	unique_combinations = np.swapaxes(np.unique(np.abs(array_PID), axis=1),0,1)
 	for unique_combination in unique_combinations:
 		print(unique_combination)
 
 	results = {}
-	results['particle_1_PID'] = all_results['particle_1_PID'].detach().numpy()
-	results['particle_2_PID'] = all_results['particle_2_PID'].detach().numpy()
-	results['particle_3_PID'] = all_results['particle_3_PID'].detach().numpy()
+	results['particle_1_PID'] = all_results['particle_1_PID']
+	results['particle_2_PID'] = all_results['particle_2_PID']
+	results['particle_3_PID'] = all_results['particle_3_PID']
 	for particle_idx, particle in enumerate(['1','2','3']):
-		results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M'].detach().numpy()
+		results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M']
 		for coordinate_idx, coordinate in enumerate(['PX','PY','PZ']):
-			results[f'particle_{particle}_{coordinate}'] = all_results['momenta'].detach().numpy()[:,particle_idx,coordinate_idx]
-			results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results['momenta_sampled_upp'].detach().numpy()[:,particle_idx,coordinate_idx]
+			results[f'particle_{particle}_{coordinate}'] = all_results['momenta'][:,particle_idx,coordinate_idx]
+			results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results[f'momenta_{t2}'][:,particle_idx,coordinate_idx]
+			print('XXUU: ', f'momenta_{t2}', results[f'particle_{particle}_{coordinate}_SAMPLED'].shape)
 
 	results = pd.DataFrame.from_dict(results)
 
@@ -587,6 +649,7 @@ def plot_summaries(all_results):
 		px = results[f'particle_1_PX{tag}'] + results[f'particle_2_PX{tag}'] + results[f'particle_3_PX{tag}']
 		py = results[f'particle_1_PY{tag}'] + results[f'particle_2_PY{tag}'] + results[f'particle_3_PY{tag}']
 		pz = results[f'particle_1_PZ{tag}'] + results[f'particle_2_PZ{tag}'] + results[f'particle_3_PZ{tag}']
+		print("CCC", px.shape, py.shape, pz.shape, pe.shape, type(px), type(py), type(pz), type(pe))
 		p_B = vector.obj(px=px, py=py, pz=pz, E=pe)
 
 		B_mass = np.sqrt(p_B.E**2 - p_B.px**2 - p_B.py**2 - p_B.pz**2)
@@ -647,11 +710,11 @@ def plot_summaries(all_results):
 		unique_combination_str = f'{unique_combination[0]}_{unique_combination[1]}_{unique_combination[2]}_'
 
 		results_i = results.query(f'abs(particle_1_PID)=={unique_combination[0]} and abs(particle_2_PID)=={unique_combination[1]} and abs(particle_3_PID)=={unique_combination[2]}')
-		print(results_i.shape)
+		print(results_i.shape, results.shape)
 
 		coordinates = ['PX', 'PY', 'PZ']
 
-		with PdfPages(f'{unique_combination_str}summary_plots.pdf') as pdf:
+		with PdfPages(f'{path}{unique_combination_str}summary_plots.pdf') as pdf:
 
 			plt.figure(figsize=(15,15))
 
@@ -668,7 +731,7 @@ def plot_summaries(all_results):
 					norm=LogNorm())
 			plt.xlabel(r"mass$_{32}^2$")
 			plt.ylabel(r"mass$_{13}^2$")
-			plt.title("Sampled")
+			plt.title(t2)
 
 			particle = "B"
 			coordinate = 'M'
@@ -724,7 +787,7 @@ def plot_summaries(all_results):
 			hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
 			plt.xlabel(f'particle {particle} {coordinate_i}')
 			plt.ylabel(f'particle {particle} {coordinate_j}')
-			plt.title("Sampled")
+			plt.title(t2)
 
 
 			particle = "3"
@@ -758,7 +821,7 @@ def plot_summaries(all_results):
 			hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
 			plt.xlabel(f'particle {particle} {coordinate_i}')
 			plt.ylabel(f'particle {particle} {coordinate_j}')
-			plt.title("Sampled")
+			plt.title(t2)
 
 
 			particle = "1"
@@ -871,7 +934,7 @@ def plot_summaries(all_results):
 							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} {coordinate_i}')
 							plt.ylabel(f'particle {particle} {coordinate_j}')
-							plt.title("Sampled")
+							plt.title(t2)
 
 
 							ax = plt.subplot(2,2,3)
@@ -885,7 +948,7 @@ def plot_summaries(all_results):
 							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'particle {particle} SYMLOG({coordinate_j})')
-							plt.title("Sampled")
+							plt.title(t2)
 
 							plt.tight_layout()
 							pdf.savefig(bbox_inches='tight')
@@ -1013,7 +1076,7 @@ def plot_summaries(all_results):
 							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} {coordinate_i}')
 							plt.ylabel(f'{particle} {coordinate_j}')
-							plt.title("Sampled")
+							plt.title(t2)
 
 
 							ax = plt.subplot(2,2,3)
@@ -1027,7 +1090,7 @@ def plot_summaries(all_results):
 							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'{particle} SYMLOG({coordinate_j})')
-							plt.title("Sampled")
+							plt.title(t2)
 
 							plt.tight_layout()
 							pdf.savefig(bbox_inches='tight')
@@ -1052,7 +1115,7 @@ def plot_summaries(all_results):
 						norm=LogNorm())
 				plt.xlabel(r"mass$_{32}^2$")
 				plt.ylabel(r"mass$_{13}^2$")
-				plt.title("Sampled")
+				plt.title(t2)
 
 				plt.tight_layout()
 				pdf.savefig(bbox_inches='tight')

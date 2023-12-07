@@ -1,16 +1,19 @@
+import sys
+
+import numpy as np
 from torch.nn import ModuleList
 from tqdm import tqdm
 
 from rlasim.lib.data_core import RootBlockShuffledSubsetDataLoader
-from rlasim.lib.networks_conditional import MlpConditionalVAE, BaseVAE
+from rlasim.lib.networks_conditional import MlpConditionalVAE, BaseVAE, ThreeBodyVaeLoss
 import torch
 import pytorch_lightning as pl
 from typing import List, Callable, Union, Any, TypeVar, Tuple
 import os
 
-from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecayMomentaPreprocessor, PreProcessor, \
+from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecayMomentaPreprocessor, OnlineThreeBodyDecayMomentaPreprocessor2, PreProcessor, \
     PostProcessor, MomentaCatPreprocessor
-from rlasim.lib.plotting import ThreeBodyDecayPlotter
+from rlasim.lib.plotting import ThreeBodyDecayPlotter, plot_summaries,plot_latent_space
 
 Tensor = TypeVar('torch.tensor')
 
@@ -27,6 +30,18 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         self.curr_device = None
         self.preprocessors = ModuleList([MomentaCatPreprocessor(), OnlineThreeBodyDecayMomentaPreprocessor()])
         self._debug=debug
+        loss_params = self.params['loss_params']
+        print(loss_params)
+        self.loss_module = ThreeBodyVaeLoss(**loss_params)
+
+        self.edge_a = [[-5, -5, 0],
+                      [-5, -5, 0],
+                      [-5, -5, 0]]
+
+        self.edge_b = [[5, 5, 30],
+                      [5, 5, 30],
+                      [5, 5, 30]]
+
 
     def forward(self, input: dict, **kwargs) -> Tensor:
         x = self.model(input, **kwargs)
@@ -83,7 +98,7 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         self.prediction_results = []
 
     def on_predict_end(self) -> None:
-        self.produce_pdf(self.prediction_results, str='results', path=self.params['pdf_prefix']+'_results.pdf')
+        self.produce_pdf(self.prediction_results, str='results', path=self.params['pdf_prefix']+'_results_')
 
     def estimate_preprocessors(self, datamodule=None):
         # TODO: Can function be re-written better
@@ -150,7 +165,7 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
         #
         # return converted_dict
 
-    def training_step(self, batch, batch_idx, optimizer_idx=0):
+    def training_step(self, batch, batch_idx):
         assert type(batch) is dict
         batch = self.to_32b(batch)
         self.curr_device = list(batch.values())[0].device
@@ -162,14 +177,51 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
                 batch_2.update(preprocessor(batch_2))
         # batch_2.update(batch)
 
+        #### filter here
+        filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
+        filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
+
+        filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
+
+
+        filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
+                                   torch.less(batch_2['momenta'], filter_max))
+
+        # print(filter)
+
+        filter = torch.all(filter, dim=1)
+        filter = torch.all(filter, dim=1)
+
+        data_samples_2 = dict()
+        for k,v in batch_2.items():
+            # print("Filtering...")
+            # print(batch_2[k].shape)
+            data_samples_2[k] = batch_2[k][filter]
+            # print(data_samples_2[k].shape)
+        batch_2 = data_samples_2
+        #####
+
         results = self.forward(batch_2)
-        train_loss = self.model.loss_function(results,
-                                              M_N=self.params['kld_weight'],
-                                              optimizer_idx=optimizer_idx,
-                                              batch_idx=batch_idx)
+
+        for preprocessor in self.preprocessors:
+            if isinstance(preprocessor, PostProcessor):
+                batch_2.update(preprocessor(results, direction=-1, on='reconstructed'))
+        batch_2.update(results)
+
+        train_loss = self.loss_module.forward(batch_2, batch_idx)
+
+        # train_loss = self.model.loss_function(results,
+        #                                       M_N=self.params['kld_weight'],
+        #                                       optimizer_idx=optimizer_idx,
+        #                                       batch_idx=batch_idx)
         # print(batch_idx, np.mean(batch_pp.cpu().numpy()), np.mean(condition_pp.cpu().numpy()), train_loss['loss_kld'], train_loss['loss_reco'])
 
         self.log_dict({key: val.item() for key, val in train_loss.items()}, sync_dist=True)
+
+        # opt = self.optimizers()
+        # opt.zero_grad()
+        # self.manual_backward(train_loss['loss'])
+        # opt.step()
 
         return train_loss['loss']
 
@@ -187,22 +239,46 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
             if isinstance(preprocessor, PreProcessor):
                 batch_2.update(preprocessor(batch_2))
 
-        output = self.forward(batch_2)
-        val_loss = self.model.loss_function(output,
-                                            M_N=1.0,  # real_img.shape[0]/ self.num_val_imgs,
-                                            optimizer_idx=optimizer_idx,
-                                            batch_idx=batch_idx)
 
-        self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
+        #### filter here
+        filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
+        filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
+
+        filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
+
+
+        filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
+                                   torch.less(batch_2['momenta'], filter_max))
+
+        # print(filter)
+
+        filter = torch.all(filter, dim=1)
+        filter = torch.all(filter, dim=1)
+
+        data_samples_2 = dict()
+        for k,v in batch_2.items():
+            # print("Filtering...")
+            # print(batch_2[k].shape)
+            data_samples_2[k] = batch_2[k][filter]
+            # print(data_samples_2[k].shape)
+        batch_2 = data_samples_2
+        #####
+
+        results = self.forward(batch_2)
+        batch_2.update(results)
 
         # The code will find the momenta_mother_pp as the condition -- dicts are always easier to manage
-        sampled = self.model.sample(len(list(batch.values())[0]), self.curr_device, data_dict=batch_2)
+        sampled = self.model.sample(len(list(batch_2.values())[0]), self.curr_device, data_dict=batch_2)
+        batch_2.update(sampled)
+        print("\n\nCHECK", batch_2.keys())
 
         for preprocessor in self.preprocessors:
             if isinstance(preprocessor, PostProcessor):
                 batch_2.update(preprocessor(sampled, direction=-1, on='sampled'))
-                batch_2.update(preprocessor(output, direction=-1, on='reconstructed'))
-        batch_2.update(batch)
+                batch_2.update(preprocessor(results, direction=-1, on='reconstructed'))
+
+        val_loss = self.loss_module.forward(batch_2)
+        self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
 
         # print({k:v[0] for k,v in batch_2.items()} )
 
@@ -217,9 +293,16 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
             if path is None:
                 path = os.path.join(self.logger.log_dir,
                                        'samples',
-                                       f"{self.logger.name}_{str}_Epoch_{self.current_epoch}.pdf")
-            plotter = ThreeBodyDecayPlotter(**self.plotter_params)
-            plotter.plot(samples, path)
+                                       f"{self.logger.name}_{str}_Epoch_{self.current_epoch}_")
+            # try:
+            plot_latent_space(samples, path=path+'latent_space_')
+            plot_summaries(samples, path=path+'reco_', only_summary=False, t2='reconstructed')
+            plot_summaries(samples, path=path+'sampled_', only_summary=False, t2='sampled')
+
+            # except Exception as e:
+            #     print("Error occurred in plot summaries", e, file=sys.stderr)
+            # plotter = ThreeBodyDecayPlotter(**self.plotter_params)
+            # plotter.plot(samples, path)
 
         except Warning:
             pass

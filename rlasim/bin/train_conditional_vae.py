@@ -1,9 +1,14 @@
+import time
 from pathlib import Path
 
+import pytorch_lightning
+import torch
 import yaml
 from pytorch_lightning import Trainer
+
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from tqdm import tqdm
 
 from rlasim.lib.experiments_conditional import ConditionalThreeBodyDecayVaeSimExperiment
 from rlasim.lib.networks_conditional import MlpConditionalVAE, BaseVAE
@@ -14,7 +19,7 @@ from rlasim.lib.organise_data import ThreeBodyDecayDataset
 from rlasim.lib.utils import load_checkpoint
 
 
-def main(config_file='configs/vae_conditional.yaml', predict=False):
+def main(config_file='configs/vae_conditional_7.yaml', predict=False):
     try:
         with open(config_file, 'r') as file:
             config = yaml.safe_load(file)
