@@ -535,7 +535,8 @@ def poisson_asym_errors(y_points):
 
 def plot_x_y_yerr(ax, data, limits=None, bins=50, label=None, c='tab:blue', markersize=2, alpha=1, also_plot_hist=True):
 
-	hist_i = np.histogram(data, range=limits, bins=bins)
+	# hist_i = np.histogram(data, range=limits, bins=bins)
+	hist_i = np.histogram(data, bins=bins)
 	binw=hist_i[1][1]-hist_i[1][0]
 	x_points = hist_i[1][:-1] + (hist_i[1][1]-hist_i[1][0])/2.
 	y_points = hist_i[0]
@@ -628,14 +629,17 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M']
 		for coordinate_idx, coordinate in enumerate(['PX','PY','PZ']):
 			results[f'particle_{particle}_{coordinate}'] = all_results['momenta'][:,particle_idx,coordinate_idx]
-			results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results[f'momenta_{t2}'][:,particle_idx,coordinate_idx]
+			if f'momenta_{t2}' in all_results:
+				results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results[f'momenta_{t2}'][:,particle_idx,coordinate_idx]
+			else:
+				results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results['momenta'][:,particle_idx,coordinate_idx]
 			print('XXUU: ', f'momenta_{t2}', results[f'particle_{particle}_{coordinate}_SAMPLED'].shape)
 
 	results = pd.DataFrame.from_dict(results)
 
-	results = results.query('particle_1_PZ>0')
-	results = results.query('particle_2_PZ>0')
-	results = results.query('particle_3_PZ>0')
+	# results = results.query('particle_1_PZ>0')
+	# results = results.query('particle_2_PZ>0')
+	# results = results.query('particle_3_PZ>0')
 
 	################################################################################
 	# B
@@ -650,7 +654,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		py = results[f'particle_1_PY{tag}'] + results[f'particle_2_PY{tag}'] + results[f'particle_3_PY{tag}']
 		pz = results[f'particle_1_PZ{tag}'] + results[f'particle_2_PZ{tag}'] + results[f'particle_3_PZ{tag}']
 		print("CCC", px.shape, py.shape, pz.shape, pe.shape, type(px), type(py), type(pz), type(pe))
-		p_B = vector.obj(px=px, py=py, pz=pz, E=pe)
+		p_B = vector.array({"px":px, "py":py, "pz":pz, "E":pe})
 
 		B_mass = np.sqrt(p_B.E**2 - p_B.px**2 - p_B.py**2 - p_B.pz**2)
 
@@ -671,7 +675,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		px = results[f'particle_3_PX{tag}'] + results[f'particle_2_PX{tag}']
 		py = results[f'particle_3_PY{tag}'] + results[f'particle_2_PY{tag}']
 		pz = results[f'particle_3_PZ{tag}'] + results[f'particle_2_PZ{tag}']
-		p_32 = vector.obj(px=px, py=py, pz=pz, E=pe)
+		p_32 = vector.array({"px":px, "py":py, "pz":pz, "E":pe})
 
 		mass_32 = np.sqrt(p_32.E**2 - p_32.px**2 - p_32.py**2 - p_32.pz**2)
 		results[f'mass_32{tag}'] = np.asarray(mass_32)
@@ -680,7 +684,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		px = results[f'particle_1_PX{tag}'] + results[f'particle_3_PX{tag}']
 		py = results[f'particle_1_PY{tag}'] + results[f'particle_3_PY{tag}']
 		pz = results[f'particle_1_PZ{tag}'] + results[f'particle_3_PZ{tag}']
-		p_13 = vector.obj(px=px, py=py, pz=pz, E=pe)
+		p_13 = vector.array({"px":px, "py":py, "pz":pz, "E":pe})
 
 		mass_13 = np.sqrt(p_13.E**2 - p_13.px**2 - p_13.py**2 - p_13.pz**2)
 		results[f'mass_13{tag}'] = np.asarray(mass_13)
@@ -719,6 +723,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 			plt.figure(figsize=(15,15))
 
 			ax = plt.subplot(3,3,1)
+
 			plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50, 
 					range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
 					norm=LogNorm())
@@ -925,27 +930,31 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 							plt.figure(figsize=(10,8))
 							ax = plt.subplot(2,2,1)
-							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} {coordinate_i}')
 							plt.ylabel(f'particle {particle} {coordinate_j}')
 							plt.title("Truth")
 
 							ax = plt.subplot(2,2,2)
-							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} {coordinate_i}')
 							plt.ylabel(f'particle {particle} {coordinate_j}')
 							plt.title(t2)
 
 
 							ax = plt.subplot(2,2,3)
-							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'particle {particle} SYMLOG({coordinate_j})')
 							plt.title("Truth")
 
 
 							ax = plt.subplot(2,2,4)
-							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), bins=35, norm=LogNorm())
 							plt.xlabel(f'particle {particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'particle {particle} SYMLOG({coordinate_j})')
 							plt.title(t2)
@@ -1067,27 +1076,30 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 							plt.figure(figsize=(10,8))
 							ax = plt.subplot(2,2,1)
-							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}'], results_i[f'particle_{particle}_{coordinate_j}'], bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} {coordinate_i}')
 							plt.ylabel(f'{particle} {coordinate_j}')
 							plt.title("Truth")
 
 							ax = plt.subplot(2,2,2)
-							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], range=[range_vec_i,range_vec_j], bins=35, norm=LogNorm())
+							hist = plt.hist2d(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED'], results_i[f'particle_{particle}_{coordinate_j}_SAMPLED'], bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} {coordinate_i}')
 							plt.ylabel(f'{particle} {coordinate_j}')
 							plt.title(t2)
 
-
 							ax = plt.subplot(2,2,3)
-							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}']), symlog(results_i[f'particle_{particle}_{coordinate_j}']), bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'{particle} SYMLOG({coordinate_j})')
 							plt.title("Truth")
 
 
 							ax = plt.subplot(2,2,4)
-							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							# hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), range=[range_vec_i_log,range_vec_j_log], bins=35, norm=LogNorm())
+							hist = plt.hist2d(symlog(results_i[f'particle_{particle}_{coordinate_i}_SAMPLED']), symlog(results_i[f'particle_{particle}_{coordinate_j}_SAMPLED']), bins=35, norm=LogNorm())
 							plt.xlabel(f'{particle} SYMLOG({coordinate_i})')
 							plt.ylabel(f'{particle} SYMLOG({coordinate_j})')
 							plt.title(t2)
@@ -1103,15 +1115,19 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 				plt.figure(figsize=(10,5))
 
 				ax = plt.subplot(1,2,1)
-				plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50, 
-						range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
+				# plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50,
+				# 		range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
+				# 		norm=LogNorm())
+				plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50,
 						norm=LogNorm())
 				plt.xlabel(r"mass$_{32}^2$")
 				plt.ylabel(r"mass$_{13}^2$")
 				plt.title("Truth")
 				ax = plt.subplot(1,2,2)
-				plt.hist2d(results_i.mass_32_SAMPLED**2, results_i.mass_13_SAMPLED**2, bins=50, 
-						range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
+				# plt.hist2d(results_i.mass_32_SAMPLED**2, results_i.mass_13_SAMPLED**2, bins=50,
+				# 		range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
+				# 		norm=LogNorm())
+				plt.hist2d(results_i.mass_32_SAMPLED**2, results_i.mass_13_SAMPLED**2, bins=50,
 						norm=LogNorm())
 				plt.xlabel(r"mass$_{32}^2$")
 				plt.ylabel(r"mass$_{13}^2$")

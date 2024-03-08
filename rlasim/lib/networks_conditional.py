@@ -198,8 +198,8 @@ class ThreeBodyVaeLoss(nn.Module):
         if self.parent_mass_weight > 0.0:
             recons_loss += parent_mass_loss * self.parent_mass_weight
 
-        print("XXA", torch.mean(input, dim=0).detach().cpu().numpy(), torch.mean(recons2, dim=0).detach().cpu().numpy())
-        print("XXB", torch.max(input, dim=0)[0].detach().cpu().numpy(), torch.max(recons2, dim=0)[0].detach().cpu().numpy())
+        # print("XXA", torch.mean(input, dim=0).detach().cpu().numpy(), torch.mean(recons2, dim=0).detach().cpu().numpy())
+        # print("XXB", torch.max(input, dim=0)[0].detach().cpu().numpy(), torch.max(recons2, dim=0)[0].detach().cpu().numpy())
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
         kld_weight = self.kld_weight
@@ -302,9 +302,8 @@ class MlpConditionalVAE(BaseVAE):
         return result
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
-        # return mu + logvar # TODO: Comment this
         std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
+        eps = torch.randn_like(std) # Multi variate normal sampling
         return eps * std + mu
 
 

@@ -177,29 +177,29 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
                 batch_2.update(preprocessor(batch_2))
         # batch_2.update(batch)
 
-        #### filter here
-        filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
-        filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
-
-        filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
-
-
-        filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
-                                   torch.less(batch_2['momenta'], filter_max))
-
-        # print(filter)
-
-        filter = torch.all(filter, dim=1)
-        filter = torch.all(filter, dim=1)
-
-        data_samples_2 = dict()
-        for k,v in batch_2.items():
-            # print("Filtering...")
-            # print(batch_2[k].shape)
-            data_samples_2[k] = batch_2[k][filter]
-            # print(data_samples_2[k].shape)
-        batch_2 = data_samples_2
-        #####
+        # #### filter here
+        # filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
+        # filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
+        #
+        # filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
+        #
+        #
+        # filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
+        #                            torch.less(batch_2['momenta'], filter_max))
+        #
+        # # print(filter)
+        #
+        # filter = torch.all(filter, dim=1)
+        # filter = torch.all(filter, dim=1)
+        #
+        # data_samples_2 = dict()
+        # for k,v in batch_2.items():
+        #     # print("Filtering...")
+        #     # print(batch_2[k].shape)
+        #     data_samples_2[k] = batch_2[k][filter]
+        #     # print(data_samples_2[k].shape)
+        # batch_2 = data_samples_2
+        # #####
 
         results = self.forward(batch_2)
 
@@ -240,29 +240,29 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
                 batch_2.update(preprocessor(batch_2))
 
 
-        #### filter here
-        filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
-        filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
-
-        filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
-
-
-        filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
-                                   torch.less(batch_2['momenta'], filter_max))
-
-        # print(filter)
-
-        filter = torch.all(filter, dim=1)
-        filter = torch.all(filter, dim=1)
-
-        data_samples_2 = dict()
-        for k,v in batch_2.items():
-            # print("Filtering...")
-            # print(batch_2[k].shape)
-            data_samples_2[k] = batch_2[k][filter]
-            # print(data_samples_2[k].shape)
-        batch_2 = data_samples_2
-        #####
+        # #### filter here
+        # filter_min = torch.tensor(self.edge_a)[np.newaxis, :]
+        # filter_max = torch.tensor(self.edge_b)[np.newaxis, :]
+        #
+        # filter_min, filter_max = filter_min.to('cuda:0'), filter_max.to('cuda:0')
+        #
+        #
+        # filter = torch.logical_and(torch.greater(batch_2['momenta'], filter_min),
+        #                            torch.less(batch_2['momenta'], filter_max))
+        #
+        # # print(filter)
+        #
+        # filter = torch.all(filter, dim=1)
+        # filter = torch.all(filter, dim=1)
+        #
+        # data_samples_2 = dict()
+        # for k,v in batch_2.items():
+        #     # print("Filtering...")
+        #     # print(batch_2[k].shape)
+        #     data_samples_2[k] = batch_2[k][filter]
+        #     # print(data_samples_2[k].shape)
+        # batch_2 = data_samples_2
+        # #####
 
         results = self.forward(batch_2)
         batch_2.update(results)
