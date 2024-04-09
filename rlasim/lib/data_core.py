@@ -32,6 +32,8 @@ def get_pdgid(name_):
         'D0b': 'D~0',
         'Ds+': 'D(s)+',
         'Ds-': 'D(s)-',
+        'K0b': 'K~0',
+
     }
 
     if name_ in rapidsim2pdg_mapping:
