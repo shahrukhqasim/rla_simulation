@@ -43,6 +43,7 @@ data_params:
   load_together: 1000000
   data_path:
     train:
+      # change to rot root file
       path: "data/single_mode_train.root"
       num_blocks: 1000
       block_size: 10000

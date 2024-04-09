@@ -4,7 +4,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import vector
 
-file = uproot.open("test_PHSP.root")["DecayTree"]
+#file = uproot.open("test_PHSP.root")["DecayTree"]
+file = uproot.open("output.root")["DecayTree"]
 keys = file.keys()
 
 results = file.arrays(keys, library="np")
@@ -37,7 +38,8 @@ plt.hist2d(mass_32**2, mass_13**2, bins=50)
 plt.xlabel("mass_{32}^2")
 plt.ylabel("mass_{13}^2")
 
-file = uproot.open("test_D_DALITZ.root")["DecayTree"]
+#file = uproot.open("test_D_DALITZ.root")["DecayTree"]
+file = uproot.open("output.root")["DecayTree"]
 keys = file.keys()
 
 results = file.arrays(keys, library="np")

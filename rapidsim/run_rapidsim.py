@@ -11,6 +11,7 @@ import yaml
 from particle import Particle
 from tqdm import tqdm
 
+
 from rlasim.lib.data_core import get_pdgid
 import pandas as pd
 
@@ -38,13 +39,16 @@ particle_types["nue"] = "lepton_neutrino"
 particle_types["anti-nue"] = "lepton_neutrino"
 particle_types["gamma"] = "photon"
 
+particle_types["K0b"] = "meson"
+
 
 
 if os.getlogin() == 'am13743':
     rapid_sim_path = '$RAPIDSIM_ROOT/build/src/RapidSim.exe'
 else:
-    rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
-    
+    #rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
+    rapid_sim_path = 'RapidSim.exe'
+
 if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
     print(f"Settling rapid_sim_path to {os.environ.get('RAPID_SIM_EXE_PATH')}")
     rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
@@ -76,7 +80,7 @@ def run_command(packed):
         file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
         file2['DecayTree'] = results
         file2.close()
-    except:
+    except ZeroDivisionError:
         print(f'rs_{rs_idx}_tree.root NOT PRESENT')
 
 def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_name='output'):
@@ -93,8 +97,11 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if config_file is None:
 
         decay_channels = {}
-        decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
-        decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+        #decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
+        #decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+
+        decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"}]
+
 
         N_channels_total = 1
         N_events = 1E5
@@ -111,7 +118,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
                                 "gamma",
                                 "K+", "pi+",
                                 "e-", "mu-",
-                                "nue",
+                                "nue", "K0b"
                             ]
 
         # mother_particles = [
