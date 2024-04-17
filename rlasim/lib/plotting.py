@@ -699,7 +699,8 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		results[f'particle_p_13_PZ{tag}'] = p_13.pz
 
 	results = results.dropna()
-
+	# I need to export this results dictionary as a readable file!
+	# B is supposed to be the mother particle (which can be D+ or B+)
 	def symlog(array):
 		return np.sign(array)*np.log(np.abs(array)+1)
 	
@@ -1140,3 +1141,5 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 	
 		print(f'{unique_combination_str} done')
+
+	return results

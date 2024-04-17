@@ -38,7 +38,6 @@ particle_types["mu+"] = "lepton"
 particle_types["nue"] = "lepton_neutrino"
 particle_types["anti-nue"] = "lepton_neutrino"
 particle_types["gamma"] = "photon"
-
 particle_types["K0b"] = "meson"
 
 
@@ -97,11 +96,19 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if config_file is None:
 
         decay_channels = {}
-        #decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
-        #decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+        decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
+        decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
 
-        decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"}]
-
+        """decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+                                {"decay":["K0b", "mu+", "anti-numu"], "evtgen_model":"PHSP"},
+                                {"decay": ["K+", "pi+", "pi-"], "evtgen_model": "PHSP"},
+                                {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+                                {"decay": ["pi-", "K+", "K+"], "evtgen_model": "PHSP"}]
+        """
+        """decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+                                {"decay": ["K0b", "mu+", "anti-numu"], "evtgen_model": "PHSP"}]
+        """
+        #decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"}]
 
         N_channels_total = 1
         N_events = 1E5
@@ -362,4 +369,4 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
 
 if __name__ == '__main__':
-    argh.dispatch_command(run)
+    argh.dispatch_command(run(output_name="D+B+_1mode"))
