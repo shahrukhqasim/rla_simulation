@@ -1,7 +1,10 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch.distributions
 import torch.optim as optim
+from datetime import datetime
 
 learning_rate = 5e-5
 num_iterations = 10 ** 6
@@ -9,6 +12,15 @@ batch_size = 8192
 noise_dim = 3
 device = 'mps'
 weight_clip = 0.01
+current_time = datetime.now()
+random_string = current_time.strftime("%Y%m%d%H%M%S%f")[:-3]
+output_dir = 'logs/wgan_check/'
+if not os.path.exists(output_dir):
+    os.mkdir(output_dir)
+output_dir = output_dir+random_string
+os.mkdir(output_dir)
+to_pdf=True
+after = 20
 
 data_dim = 4
 
@@ -66,7 +78,7 @@ for it in range(num_iterations):
     loss_gen.backward()
     opt_gen.step()
 
-    if it % 10 == 0:
+    if it % after == 0:
         sampled_data = network.sample(1000, base_dist, {}, device=device)[0].detach().cpu().numpy()
         real_data = distribution_a.sample((1000,)).cpu().numpy()
 
@@ -86,8 +98,11 @@ for it in range(num_iterations):
             axs[i // 2, i % 2].legend()
 
         plt.tight_layout()
-        # Show plot
-        plt.show()
+
+        if to_pdf:
+            plt.savefig(os.path.join(output_dir, 'it_%05d.pdf'%it))
+        else:
+            plt.show()
 
         print(sampled_data.shape, real_data.shape)
 
