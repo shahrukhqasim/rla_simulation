@@ -18,7 +18,8 @@ import pandas as pd
 import vector #0.8.0
 import os
 from matplotlib.backends.backend_pdf import PdfPages
-import pickle 
+import pickle
+from particle import Particle
 
 small_fact = 1
 
@@ -616,7 +617,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	all_results = data_samples_2
 
 
-	array_PID = np.asarray([all_results['particle_1_PID'], all_results['particle_2_PID'], all_results['particle_3_PID']])
+	array_PID = np.asarray([all_results['particle_1_PID'], all_results['particle_2_PID'], all_results['particle_3_PID'], all_results['mother_PID']])
 	unique_combinations = np.swapaxes(np.unique(np.abs(array_PID), axis=1),0,1)
 	for unique_combination in unique_combinations:
 		print(unique_combination)
@@ -625,6 +626,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	results['particle_1_PID'] = all_results['particle_1_PID']
 	results['particle_2_PID'] = all_results['particle_2_PID']
 	results['particle_3_PID'] = all_results['particle_3_PID']
+	results['mother'] = all_results['mother_PID']
 	for particle_idx, particle in enumerate(['1','2','3']):
 		results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M']
 		for coordinate_idx, coordinate in enumerate(['PX','PY','PZ']):
@@ -642,7 +644,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	# results = results.query('particle_3_PZ>0')
 
 	################################################################################
-	# B
+	# mother (formally B)
 	################################################################################
 	for tag in ['', "_SAMPLED"]:
 		pe_1 = np.sqrt(results.particle_1_M**2 + results[f'particle_1_PX{tag}']**2 + results[f'particle_1_PY{tag}']**2 + results[f'particle_1_PZ{tag}']**2)
@@ -654,14 +656,16 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 		py = results[f'particle_1_PY{tag}'] + results[f'particle_2_PY{tag}'] + results[f'particle_3_PY{tag}']
 		pz = results[f'particle_1_PZ{tag}'] + results[f'particle_2_PZ{tag}'] + results[f'particle_3_PZ{tag}']
 		print("CCC", px.shape, py.shape, pz.shape, pe.shape, type(px), type(py), type(pz), type(pe))
-		p_B = vector.array({"px":px, "py":py, "pz":pz, "E":pe})
 
-		B_mass = np.sqrt(p_B.E**2 - p_B.px**2 - p_B.py**2 - p_B.pz**2)
 
-		results[f'particle_B_M{tag}'] = B_mass
-		results[f'particle_B_PX{tag}'] = p_B.px
-		results[f'particle_B_PY{tag}'] = p_B.py
-		results[f'particle_B_PZ{tag}'] = p_B.pz
+		p_mother = vector.array({"px":px, "py":py, "pz":pz, "E":pe})
+
+		mother_mass = np.sqrt(p_mother.E**2 - p_mother.px**2 - p_mother.py**2 - p_mother.pz**2)
+
+		results[f'particle_mother_M{tag}'] = mother_mass
+		results[f'particle_mother_PX{tag}'] = p_mother.px
+		results[f'particle_mother_PY{tag}'] = p_mother.py
+		results[f'particle_mother_PZ{tag}'] = p_mother.pz
 
 	################################################################################
 	# DALITZ
@@ -739,7 +743,8 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 			plt.ylabel(r"mass$_{13}^2$")
 			plt.title(t2)
 
-			particle = "B"
+			particle = "mother"
+			mother_name = str(Particle.from_pdgid(unique_combination[3]).name)
 			coordinate = 'M'
 
 			range_i = np.amax(np.abs(results_i[f'particle_{particle}_{coordinate}']))*1.2
@@ -752,13 +757,15 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 			ax = plt.subplot(3,3,3)
 			plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}'], limits=range_vec, bins=50, label='Truth', c='tab:blue')
 			plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}_SAMPLED'], limits=range_vec, bins=50, label='Sampled', c='tab:orange')
-			plt.xlabel(f'particle {particle} {coordinate}')
+			#plt.xlabel(f'particle {particle} {coordinate}')
+			plt.xlabel(f'particle {mother_name} {coordinate}')
 			plt.legend(loc='upper right')
 
 			ax = plt.subplot(3,3,6)
 			plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}'], limits=range_vec, bins=50, label='Truth', c='tab:blue')
 			plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}_SAMPLED'], limits=range_vec, bins=50, label='Sampled', c='tab:orange')
-			plt.xlabel(f'particle {particle} {coordinate}')
+			#plt.xlabel(f'particle {particle} {coordinate}')
+			plt.xlabel(f'particle {mother_name} {coordinate}')
 			plt.yscale('log')
 
 
@@ -968,10 +975,11 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 				pdf.savefig(bbox_inches='tight')
 				plt.close()
 
-				particle = "B"
+				particle = "mother"
+
 				for coordinate in ['M', 'PX', 'PY', 'PZ']:
 
-					print(f'B {coordinate}')
+					print(f'mother {coordinate}')
 				
 					range_i = np.amax(np.abs(results_i[f'particle_{particle}_{coordinate}']))*1.2
 					range_vec = [-range_i, range_i]
@@ -984,23 +992,27 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 					ax = plt.subplot(2,2,1)
 					plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}'], limits=range_vec, bins=50, label='Truth', c='tab:blue')
 					plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}_SAMPLED'], limits=range_vec, bins=50, label='Sampled', c='tab:orange')
-					
+					plt.xlabel(f'particle {mother_name} ...')
+
 					ax = plt.subplot(2,2,2)
 					plot_x_y_yerr(ax, symlog(results_i[f'particle_{particle}_{coordinate}']), limits=range_vec_log, bins=50, label='Truth', c='tab:blue')
 					plot_x_y_yerr(ax, symlog(results_i[f'particle_{particle}_{coordinate}_SAMPLED']), limits=range_vec_log, bins=50, label='Sampled', c='tab:orange')
 					plt.legend(loc='upper right')
-					plt.xlabel(f'particle {particle} SYMLOG({coordinate})')
+					#plt.xlabel(f'particle {particle} SYMLOG({coordinate})')
+					plt.xlabel(f'particle {mother_name} SYMLOG({coordinate})')
 
 					ax = plt.subplot(2,2,3)
 					plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}'], limits=range_vec, bins=50, label='Truth', c='tab:blue')
 					plot_x_y_yerr(ax, results_i[f'particle_{particle}_{coordinate}_SAMPLED'], limits=range_vec, bins=50, label='Sampled', c='tab:orange')
-					plt.xlabel(f'particle {particle} {coordinate}')
+					#plt.xlabel(f'particle {particle} {coordinate}')
+					plt.xlabel(f'particle {mother_name} {coordinate}')
 					plt.yscale('log')
 
 					ax = plt.subplot(2,2,4)
 					plot_x_y_yerr(ax, symlog(results_i[f'particle_{particle}_{coordinate}']), limits=range_vec_log, bins=50, label='Truth', c='tab:blue')
 					plot_x_y_yerr(ax, symlog(results_i[f'particle_{particle}_{coordinate}_SAMPLED']), limits=range_vec_log, bins=50, label='Sampled', c='tab:orange')
-					plt.xlabel(f'particle {particle} SYMLOG({coordinate})')
+					#plt.xlabel(f'particle {particle} SYMLOG({coordinate})')
+					plt.xlabel(f'particle {mother_name} SYMLOG({coordinate})')
 					plt.yscale('log')
 					plt.tight_layout()
 					pdf.savefig(bbox_inches='tight')
