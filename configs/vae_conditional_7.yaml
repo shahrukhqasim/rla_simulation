@@ -1,5 +1,5 @@
 model_params:
-  name: 'training5_rot'
+  name: 'training5_rot_test'
 #  data_feature_dim: [ 3, 3 ]
   latent_dim: 16
   conditional_feats: { 'momenta_mother_pp': [ 1, 3 ], 'momenta_mother': [ 1, 3 ], 'particle_1_M': [ 1 ], 'particle_2_M': [ 1 ], 'particle_3_M': [ 1 ], 'mother_M_TRUE': [ 1 ] }
@@ -31,7 +31,7 @@ trainer_params:
 
 logging_params:
   save_dir: "logs/"
-  name: "training5_rot"
+  name: "training5_rot_test"
 
 data_params:
   train_batch_size: 10000
