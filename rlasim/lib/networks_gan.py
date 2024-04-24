@@ -1,5 +1,6 @@
+import numpy as np
 import torch
-from torch import nn
+from torch import nn, autograd
 from torch.nn import functional as F
 from functools import reduce
 from typing import List, Callable, Union, Any, TypeVar, Tuple
@@ -11,84 +12,44 @@ Tensor = TypeVar('torch.tensor')
 
 
 class MlpGanGenerator(nn.Module):
-    def __init__(self, in_features, out_features, condition_dims):
+    def __init__(self, in_features, out_features, condition_dims, layer_sizes=None):
         super(MlpGanGenerator, self).__init__()
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(in_features+condition_dims, 128)  # 5*5 from image dimension
-        self.fc2 = nn.Linear(128, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 1024)
-        self.fc5 = nn.Linear(1024, 1024)
-        self.fc6 = nn.Linear(1024, 1024)
-        self.fcl = nn.Linear(1024, out_features)
+        if layer_sizes is None:
+            layer_sizes = [128, 512, 512, 512, 512, 512]  # Default layer sizes
+            # layer_sizes = [128, 1024, 1024]
+        assert len(layer_sizes) >= 3, "At least 5 layers are required"
 
-        # self.bn1 = nn.BatchNorm1d(1024)
-        # self.bn2 = nn.BatchNorm1d(1024)
+        self.fc_layers = nn.ModuleList()
+        self.fc_layers.append(nn.Linear(in_features + condition_dims, layer_sizes[0]))
+        for i in range(len(layer_sizes) - 1):
+            self.fc_layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+        self.fcl = nn.Linear(layer_sizes[-1], out_features)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-
-        x = self.fc2(x)
-        x = F.relu(x)
-
-        # x = self.bn1(x)
-
-        x = self.fc3(x)
-        x = F.relu(x)
-
-        # x = self.bn2(x)
-
-        x = self.fc4(x)
-        x = F.relu(x)
-
-        x = self.fc5(x)
-        x = F.relu(x)
-
-        x = self.fc6(x)
-        x = F.relu(x)
-
+        for layer in self.fc_layers:
+            x = layer(x)
+            x = F.relu(x)
         x = self.fcl(x)
         return x
 
 class MlpGanCritic(nn.Module):
-    def __init__(self, in_features, out_features, condition_dims):
+    def __init__(self, in_features, out_features, condition_dims, layer_sizes=None):
         super(MlpGanCritic, self).__init__()
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(in_features+condition_dims, 128)  # 5*5 from image dimension
-        self.fc2 = nn.Linear(128, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 1024)
-        self.fc5 = nn.Linear(1024, 1024)
-        self.fc6 = nn.Linear(1024, 1024)
-        self.fcl = nn.Linear(1024, out_features)
+        if layer_sizes is None:
+            layer_sizes = [128, 512, 512, 512, 512, 512]  # Default layer sizes
+            # layer_sizes = [128, 1024, 1024]  # Default layer sizes
+        assert len(layer_sizes) >= 3, "At least 5 layers are required"
 
-        # self.bn1 = nn.BatchNorm1d(1024)
-        # self.bn2 = nn.BatchNorm1d(1024)
+        self.fc_layers = nn.ModuleList()
+        self.fc_layers.append(nn.Linear(in_features + condition_dims, layer_sizes[0]))
+        for i in range(len(layer_sizes) - 1):
+            self.fc_layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+        self.fcl = nn.Linear(layer_sizes[-1], out_features)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-
-        x = self.fc2(x)
-        x = F.relu(x)
-
-        # x = self.bn1(x)
-
-        x = self.fc3(x)
-        x = F.relu(x)
-
-        # x = self.bn2(x)
-
-        x = self.fc4(x)
-        x = F.relu(x)
-
-        x = self.fc5(x)
-        x = F.relu(x)
-
-        x = self.fc6(x)
-        x = F.relu(x)
-
+        for layer in self.fc_layers:
+            x = layer(x)
+            x = F.relu(x)
         x = self.fcl(x)
         return x
 
@@ -100,14 +61,13 @@ class MlpGan(nn.Module):
 
 
 class MlpConditionalWGAN(nn.Module):
-    def __init__(self, latent_dim=64, conditional_feats=None, data_feats=None, **kwargs):
+    def __init__(self, noise_dim=64, conditional_feats=None, data_feats=None, **kwargs):
         super().__init__()
 
-
-        self.latent_dim = latent_dim
+        self.noise_dim = noise_dim
 
         if conditional_feats is None:
-            conditional_feats = {'momenta_mother_pp': [1, 3]}
+            conditional_feats = {}
 
         if data_feats is None:
             data_feats = {'momenta': [3, 3]}
@@ -128,11 +88,14 @@ class MlpConditionalWGAN(nn.Module):
             self.data_feats[k] = (reduced_shape, shape)
             reduced_data_feature_dim += reduced_shape
 
-        self.gen = MlpGanGenerator(in_features=self.latent_dim, out_features=reduced_data_feature_dim, condition_dims=reduced_conditional_dim)
-        self.critic = MlpGanCritic(in_features=reduced_data_feature_dim, out_features=self.latent_dim, condition_dims=reduced_conditional_dim)
+        self.gen = MlpGanGenerator(in_features=self.noise_dim, out_features=reduced_data_feature_dim, condition_dims=reduced_conditional_dim)
+        self.critic = MlpGanCritic(in_features=reduced_data_feature_dim, out_features=1, condition_dims=reduced_conditional_dim)
+
+        # This is only for gradient penalty computation
+        self.uniform_dist = torch.distributions.Uniform(0, 1)
 
 
-    def criticize(self, x: Tensor, c: Tensor) -> List[Tensor]:
+    def criticize(self, x: Tensor, c: Tensor):
         # assert len(x.shape) == 3
         # assert x.shape[1] == self.data_feature_dim[0]
         # assert x.shape[2] == self.data_feature_dim[1]
@@ -157,8 +120,8 @@ class MlpConditionalWGAN(nn.Module):
             reduced_shape, shape = v
             assert len(shape) <= 2
 
-            if tag != '_reconstructed':
-                print("Sampling", k + tag)
+            # if tag != '_reconstructed':
+            #     print("Sampling", k + tag)
 
             result[k+tag] = x[:, start:start+reduced_shape]
             # print("XXX", k, result[k+tag].shape)
@@ -193,17 +156,36 @@ class MlpConditionalWGAN(nn.Module):
         cat_c = torch.cat(feats, dim=1)
         return cat_c
 
+    def generate(self, input: dict, base_dist:torch.distributions.Distribution, device=None, **kwargs):
+        features = self._get_feats(input)
+        condition = self._get_cat_condition(input)
+        if device is None:
+            device = features.device
+        if not condition is None:
+            condition = condition.to(device)
+
+        sampled, sampled_dict = self.sample(len(features), base_dist, input, tag='_sampled', device=device)
+
+        all_dict = {'features': features,
+                    'sampled': sampled,
+                    'condition': condition}
+        all_dict.update(sampled_dict)
+
+
+        return sampled, all_dict
+
+
     def forward(self, input: dict, base_dist:torch.distributions.Distribution, device=None, **kwargs) -> dict:
 
         features = self._get_feats(input)
         condition = self._get_cat_condition(input)
         if device is None:
             device = features.device
-        condition = condition.to(device)
+        if not condition is None:
+            condition = condition.to(device)
 
         sampled, sampled_dict = self.sample(len(features), base_dist, input, tag='_sampled', device=device)
 
-        print(sampled.shape, features.shape, self.data_feats, self.conditional_feats)
         critic_output_von_sampled = self.criticize(sampled, condition)
         critic_output_von_real = self.criticize(features, condition)
 
@@ -226,15 +208,42 @@ class MlpConditionalWGAN(nn.Module):
 
         if condition is not None:
             assert condition.shape[0] == num_samples
+            if device is None:
+                device = condition.device
 
-        if device is None:
-            device = condition.device
-
-        z = base_dist.sample((num_samples, self.latent_dim)).to(device)
+        z = base_dist.sample((num_samples, self.noise_dim)).to(device)
 
         samples, samples_dict = self.gen_w(z, condition, tag=tag)
 
         return samples, samples_dict
+
+    def get_generator_params(self):
+        return self.gen.parameters()
+
+    def get_critic_params(self):
+        return self.critic.parameters()
+
+    def compute_gradient_penalty(self, real_data, sampled_data, condition):
+        # Random weight term for interpolation between real and fake samples
+        alpha = self.uniform_dist.sample(torch.Size((real_data.size(0), 1))).to(real_data.device)
+        # Get random interpolation between real and fake samples
+        interpolates = (alpha * real_data + ((1 - alpha) * sampled_data)).requires_grad_(True)
+        # d_interpolates = D(interpolates)
+        d_interpolates = self.criticize(interpolates, condition)
+        fake = torch.ones((real_data.shape[0], 1), requires_grad=False).to(real_data.device)
+
+        # Get gradient w.r.t. interpolates
+        gradients = autograd.grad(
+            outputs=d_interpolates,
+            inputs=interpolates,
+            grad_outputs=fake,
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True,
+        )[0]
+        gradients = gradients.view(gradients.size(0), -1)
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        return gradient_penalty
 
 
 class ThreeBodyGanLoss(nn.Module):
@@ -250,7 +259,7 @@ class ThreeBodyGanLoss(nn.Module):
         self.parent_mass_weight = parent_mass_weight
 
 
-    def forward(self, sample, iteration=-1):
+    def forward(self, sample):
         recons = sample[self.predicted_var]
 
         if self.loss_type == 'mse':
@@ -263,7 +272,8 @@ class ThreeBodyGanLoss(nn.Module):
         critic_real = sample['critic_real'].reshape(-1)
         critic_fake = sample['critic_sampled'].reshape(-1)
         loss_critic = -(torch.mean(critic_real) - torch.mean(critic_fake))
-        the_dict = {'loss':loss_critic}
+        loss_gen = -(torch.mean(critic_fake))
+        the_dict = {'loss_critic':loss_critic, 'loss_gen' : loss_gen}
 
 
         input = sample[self.truth_var]
@@ -303,5 +313,5 @@ class ThreeBodyGanLoss(nn.Module):
 
         loss = loss_critic + secondary_weight * loss_secondary
 
-        the_dict.update({'loss': loss, 'loss_secondary': loss_secondary.detach(), 'loss_critic': loss_critic.detach()})
+        the_dict.update({'loss_secondary': loss_secondary})
         return the_dict

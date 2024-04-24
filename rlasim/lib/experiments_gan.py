@@ -1,6 +1,7 @@
 import sys
 
 import numpy as np
+from torch import optim
 from torch.nn import ModuleList
 from tqdm import tqdm
 
@@ -17,6 +18,7 @@ from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecay
 from rlasim.lib.plotting import ThreeBodyDecayPlotter, plot_summaries,plot_latent_space
 
 Tensor = TypeVar('torch.tensor')
+WEIGHT_CLIP = 0.01
 
 
 class ThreeBodyDecayGanExperiment(pl.LightningModule):
@@ -36,6 +38,9 @@ class ThreeBodyDecayGanExperiment(pl.LightningModule):
 
         self.base_dist = torch.distributions.Normal(loc=0, scale=1)
         self.gan_network = gan_network
+        self.automatic_optimization = False
+        self.critic_iterations = int(self.params['critic_iterations'])
+
 
 
 
@@ -145,10 +150,11 @@ class ThreeBodyDecayGanExperiment(pl.LightningModule):
     def to_32b(self, tensor_dict):
         return tensor_dict
 
-    def training_step(self, batch, batch_idx):
-        assert type(batch) is dict
-        batch = self.to_32b(batch)
+
+    def _do_iteration(self, batch, only_critic=False):
         self.curr_device = list(batch.values())[0].device
+        g_opt, d_opt = self.optimizers()
+
 
         batch_2 = {}
         batch_2.update(batch)
@@ -166,10 +172,40 @@ class ThreeBodyDecayGanExperiment(pl.LightningModule):
                 batch_2.update(preprocessor(results, direction=-1, on='sampled'))
         batch_2.update(results)
 
-        train_loss = self.loss_module.forward(batch_2, batch_idx)
-        self.log_dict({key: val.item() for key, val in train_loss.items()}, sync_dist=True)
+        d_opt.zero_grad()
+        g_opt.zero_grad()
 
-        return train_loss['loss']
+        train_loss = self.loss_module.forward(batch_2)
+        self.log_dict({key: val.item() for key, val in train_loss.items()}, sync_dist=True)
+        crit_loss = train_loss['loss_critic']
+
+        print(crit_loss)
+
+
+        # crit_loss.backward(retain_graph=True)
+        self.manual_backward(crit_loss)
+        d_opt.step()
+
+        for p in self.gan_network.critic.parameters():
+            p.data.clamp_(-WEIGHT_CLIP, WEIGHT_CLIP)
+
+        if only_critic:
+            return
+
+        loss_gen = train_loss['loss_gen']
+        self.manual_backward(loss_gen)
+        g_opt.step()
+
+
+    def training_step(self, batch, batch_idx):
+        assert type(batch) is dict
+        batch = self.to_32b(batch)
+
+        # for _ in range(self.critic_iterations):
+        #     self._do_iteration(batch, only_critic=True)
+
+        self._do_iteration(batch, only_critic=False)
+
 
 
     def on_validation_start(self) -> None:
@@ -229,6 +265,6 @@ class ThreeBodyDecayGanExperiment(pl.LightningModule):
             pass
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.gan_network.parameters(),
-                                     lr=self.params['adam_lr'])
-        return optimizer
+        optimizer_gen = optim.RMSprop(self.gan_network.get_generator_params(), lr=float(self.params['lr_gen']))
+        optimizer_critic = optim.RMSprop(self.gan_network.get_critic_params(), lr=float(self.params['lr_critic']))
+        return optimizer_gen, optimizer_critic
