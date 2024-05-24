@@ -196,4 +196,4 @@ def main(infile='data/single_mode_train.root', outfile='data/single_mode_train_r
 
 
 if __name__=='__main__':
-    argh.dispatch_command(main(infile='data/D+B+_1mode.root', outfile='data/D+B+_1mode_rot.root'))
+    argh.dispatch_command(main(infile='data/training25.root', outfile='data/training25_rot.root'))

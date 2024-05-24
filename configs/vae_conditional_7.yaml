@@ -1,5 +1,5 @@
 model_params:
-  name: 'training5_rot_test'
+  name: 'training25_rot'
 #  data_feature_dim: [ 3, 3 ]
   latent_dim: 16
   conditional_feats: { 'momenta_mother_pp': [ 1, 3 ], 'momenta_mother': [ 1, 3 ], 'particle_1_M': [ 1 ], 'particle_2_M': [ 1 ], 'particle_3_M': [ 1 ], 'mother_M_TRUE': [ 1 ] }
@@ -31,7 +31,7 @@ trainer_params:
 
 logging_params:
   save_dir: "logs/"
-  name: "training5_rot_test"
+  name: "training25_rot"
 
 data_params:
   train_batch_size: 10000
@@ -44,17 +44,18 @@ data_params:
   data_path:
     train:
       # change to rot root file
-      path: "data/D+B+_1mode_rot.root"
+      path: "data/training25_rot.root"
       num_blocks: 1000
       block_size: 10000
     validate:
       # path: "data/two_modes_test.root"
-      path: "data/D+B+_1mode_rot.root"
+      path: "data/training25_rot.root"
       num_blocks: 10
       block_size: 10000
 
 checkpoint:
-  path: "logs/training1/version_24/checkpoints/last.ckpt"
+  #path: "logs/training1/version_24/checkpoints/last.ckpt"
+  path: ""
 
 generate_params:
   pdf_prefix: ""

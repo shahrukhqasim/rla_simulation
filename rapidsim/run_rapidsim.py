@@ -96,8 +96,55 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if config_file is None:
 
         decay_channels = {}
-        decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
-        decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+
+        D_decay_channels = [
+            {"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+            {"decay": ["K0b", "mu+", "numu"], "evtgen_model": "PHSP"},
+            {"decay": ["pi-", "pi+", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e-", "mu+"], "evtgen_model": "PHSP"}
+        ]
+
+        B_decay_channels = [
+            {"decay": ["K+", "pi-", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "pi0", "pi0"], "evtgen_model": "PHSP"},
+            {"decay": ["pi-", "pi+", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e-", "mu+"], "evtgen_model": "PHSP"}
+        ]
+
+        decay_channels["D+"] = [D_decay_channels[0]]
+        decay_channels["B+"] = [B_decay_channels[0]]
+        """decay_channels["D+"] = [D_decay_channels[5],
+                                D_decay_channels[6],
+                                D_decay_channels[7],
+                                D_decay_channels[8],
+                                D_decay_channels[9]
+                                ]
+        """
+        """decay_channels["B+"] = [B_decay_channels[5],
+                                B_decay_channels[6],
+                                B_decay_channels[7],
+                                B_decay_channels[8],
+                                B_decay_channels[9]
+                                ]
+        """
+
+        #decay_channels["B+"] = [B_decay_channels[7], B_decay_channels[8]]
+
+        #decay_channels["D+"] = [{"decay": ["anti-K*(892)0", "e+", "nue"], "evtgen_model": "D_DALITZ"}]
+        #decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
+        #decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
 
         """decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
                                 {"decay":["K0b", "mu+", "anti-numu"], "evtgen_model":"PHSP"},
@@ -369,4 +416,4 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
 
 if __name__ == '__main__':
-    argh.dispatch_command(run(output_name="D+B+_1mode"))
+    argh.dispatch_command(run(output_name="training25"))

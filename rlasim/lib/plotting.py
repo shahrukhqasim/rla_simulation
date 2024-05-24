@@ -716,7 +716,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 		print(unique_combination)
 
-		unique_combination_str = f'{unique_combination[0]}_{unique_combination[1]}_{unique_combination[2]}_'
+		unique_combination_str = f'{unique_combination[3]}_{unique_combination[0]}_{unique_combination[1]}_{unique_combination[2]}_'
 
 		results_i = results.query(f'abs(particle_1_PID)=={unique_combination[0]} and abs(particle_2_PID)=={unique_combination[1]} and abs(particle_3_PID)=={unique_combination[2]}')
 		print(results_i.shape, results.shape)
@@ -736,7 +736,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 			plt.ylabel(r"mass$_{13}^2$")
 			plt.title("Truth")
 			ax = plt.subplot(3,3,2)
-			plt.hist2d(results_i.mass_32_SAMPLED**2, results_i.mass_13_SAMPLED**2, bins=50, 
+			plt.hist2d(results_i.mass_32_SAMPLED**2, results_i.mass_13_SAMPLED**2, bins=50,
 					range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
 					norm=LogNorm())
 			plt.xlabel(r"mass$_{32}^2$")
