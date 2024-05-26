@@ -123,22 +123,22 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
             {"decay": ["pi+", "e-", "mu+"], "evtgen_model": "PHSP"}
         ]
 
-        decay_channels["D+"] = [D_decay_channels[0]]
-        decay_channels["B+"] = [B_decay_channels[0]]
-        """decay_channels["D+"] = [D_decay_channels[5],
+        #decay_channels["D+"] = [D_decay_channels[0]]
+        #decay_channels["B+"] = [B_decay_channels[0]]
+        decay_channels["D+"] = [D_decay_channels[5],
                                 D_decay_channels[6],
                                 D_decay_channels[7],
                                 D_decay_channels[8],
                                 D_decay_channels[9]
                                 ]
-        """
-        """decay_channels["B+"] = [B_decay_channels[5],
+
+        decay_channels["B+"] = [B_decay_channels[5],
                                 B_decay_channels[6],
                                 B_decay_channels[7],
                                 B_decay_channels[8],
                                 B_decay_channels[9]
                                 ]
-        """
+
 
         #decay_channels["B+"] = [B_decay_channels[7], B_decay_channels[8]]
 
@@ -372,6 +372,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
         for particle_combination_idx, particle_combination in enumerate(tqdm(decay_channels[particle_m])):
 
             N = int(N_events/N_channels_total)
+            #N = 10000
 
             particle_i = particle_combination["decay"][0]
             particle_j = particle_combination["decay"][1]

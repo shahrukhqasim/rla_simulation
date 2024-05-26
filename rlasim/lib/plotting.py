@@ -620,7 +620,8 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	array_PID = np.asarray([all_results['particle_1_PID'], all_results['particle_2_PID'], all_results['particle_3_PID'], all_results['mother_PID']])
 	unique_combinations = np.swapaxes(np.unique(np.abs(array_PID), axis=1),0,1)
 	for unique_combination in unique_combinations:
-		print(unique_combination)
+		print("Check May 24: ", len(unique_combinations), unique_combination)
+
 
 	results = {}
 	results['particle_1_PID'] = all_results['particle_1_PID']
