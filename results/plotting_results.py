@@ -183,11 +183,6 @@ def hist_truth_sampled(ax, results_i, particle, coordinate, bin_num, unique_comb
                                                                      range=(lower_bound, upper_bound),
                                                                      color='orange')
 
-        #ax.set_title(f"Mass distribution of {particle_name} in coordinate {coordinate}")
-        # outside_count = np.sum((results_i[f'particle_{particle}_{coordinate}_SAMPLED'] < lower_bound) | (results_i[f'particle_{particle}_{coordinate}_SAMPLED'] > upper_bound))
-        #ax.text(0.25, 0.925, f"Out of bound: {outside_count}", transform=ax.transAxes, horizontalalignment='center', verticalalignment='center')
-
-
     else:
         counts_truth, bin_edges_truth, patches_truth = ax.hist(data,
                                                                bins=bin_num,
@@ -198,8 +193,6 @@ def hist_truth_sampled(ax, results_i, particle, coordinate, bin_num, unique_comb
                                                                      bins=bin_num,
                                                                      histtype='step',
                                                                      color='orange')
-
-        #ax.set_title(f"Mass distribution of {particle} in coordinate {coordinate}")
 
     bin_centers_truth = 0.5 * (bin_edges_truth[1:] + bin_edges_truth[:-1])
     bin_centers_sampled = 0.5 * (bin_edges_sampled[1:] + bin_edges_sampled[:-1])
@@ -212,23 +205,6 @@ def hist_truth_sampled(ax, results_i, particle, coordinate, bin_num, unique_comb
     errors_sampled = np.where(errors_sampled < 0, 0, errors_sampled)
     ax.errorbar(bin_centers_sampled, counts_sampled, yerr=errors_sampled, fmt='none', color='orange', label='Sampled', capsize=3)
 
-    """decay = (f"{Particle.from_pdgid(unique_combination[3]).name} → "
-             f"{Particle.from_pdgid(unique_combination[0]).name} "
-             f"{Particle.from_pdgid(unique_combination[1]).name} "
-             f"{Particle.from_pdgid(unique_combination[2]).name}")
-
-    ax.set_title(f"Decay Mode: {decay}")"""
-
-    """if particle == 1:
-        particle_name = str(Particle.from_pdgid(unique_combination[0]).name)
-    elif particle == 2:
-        particle_name = str(Particle.from_pdgid(unique_combination[1]).name)
-    elif particle == 3:
-        particle_name = str(Particle.from_pdgid(unique_combination[2]).name)
-    elif particle == "mother":
-        particle_name = str(Particle.from_pdgid(unique_combination[3]).name)
-    else:
-        particle_name = "NO NAME" """
 
     if symlog_check == True:
         if particle == "mother":
@@ -247,9 +223,15 @@ def hist_truth_sampled(ax, results_i, particle, coordinate, bin_num, unique_comb
     #pool_val = pool(counts_truth, counts_sampled, "hist")
     ax.legend()
 
-    wasserstein = wasserstein_distance(data, data_sampled)
-    ks_stat, p_val = hypothesis(data, data_sampled)
+    #wasserstein_old = wasserstein_distance(data, data_sampled)
+    truth_dist = np.repeat(bin_centers_truth, counts_truth.astype(int))
+    sampled_dist = np.repeat(bin_centers_sampled, counts_sampled.astype(int))
+    wasserstein = wasserstein_distance(truth_dist, sampled_dist)
 
+    #print(f"Old wasserstein: {wasserstein_old}")
+    #print(f"New wasserstein: {wasserstein}")
+    ks_stat, p_val = hypothesis(data, data_sampled)
+    #print(wasserstein)
     return wasserstein, ks_stat, p_val
 
 def poisson_asym_errors(y_points):
@@ -282,8 +264,10 @@ epoch = "1599"
 type = "sampled"
 desktop = False
 plots = False
-mass_plots = False
+mass_plots = True
 dalitz_mass_plots = True
+single_plot = True
+single_dalitz_plot = True
 loss = False
 dalitz_bins = 12
 hist_bins = 12
@@ -303,23 +287,23 @@ def training_vals(training_thesis, training_experiment, epochs_experiment):
     return [training_thesis, training_experiment, epochs_experiment]
 
 one_D = [
-    training_vals(1, "6", 8799),
-    training_vals(2, "22", 4699),
-    training_vals(3, "7", 2799),
-    training_vals(4, "23", 4599)
+    training_vals(1, "6_final", 1999),
+    training_vals(2, "22_final", 2299),
+    training_vals(3, "7_final", 5899),
+    training_vals(4, "23_final", 1699)
 ]
 
 one_D_rot = [
-    training_vals(1, "6_rot", 1599),
-    training_vals(2, "22_rot", 4599),
-    training_vals(3, "7_rot", 7599),
-    training_vals(4, "23_rot", 4199)
+    training_vals(1, "6_rot_final", 2499),
+    training_vals(2, "22_rot_final", 4399),
+    training_vals(3, "7_rot_final", 2799),
+    training_vals(4, "23_rot_final", 3399)
 ]
 
 two_D_rot = [
-    training_vals(5, "8_rot", 6099),
-    training_vals(6, "9_rot", 2199),
-    training_vals(7, "24_rot", 2099)
+    training_vals(5, "8_rot_final", 499),
+    training_vals(6, "9_rot_final", 2099),
+    training_vals(7, "24_rot_final", 1399)
 ]
 
 five_D_rot = [
@@ -327,7 +311,7 @@ five_D_rot = [
 ]
 
 ten_D_rot = [
-    training_vals(9, "18_rot", 999)
+    training_vals(9, "18_rot_final", 799)
 ]
 
 one_B_D_rot =[
@@ -346,7 +330,7 @@ five_B_D_rot = [
 
 def mass_plotter(trainings, label, num_decays, type,log):
     folder = "mass_plots"
-    dest_path = f"/Users/adelrio/Desktop/training_files/{folder}"
+    dest_path = f"/Users/adelrio/Desktop/training_files/plots/{folder}"
 
     if ("_rot" in trainings[0][1]):
         frame = "_rot"
@@ -374,30 +358,30 @@ def mass_plotter(trainings, label, num_decays, type,log):
 
         if label == "D":
             if num_decays == 1:
-                subplot_x = 2
-                subplot_y = 2
-                size = (8, 8)
+                subplot_x = 1
+                subplot_y = 4
+                size = (16, 4)
             elif num_decays == 2:
-                subplot_x = 3
-                subplot_y = 2
-                size = (8, 12)
+                subplot_x = 2
+                subplot_y = 3
+                size = (12, 8)
             elif num_decays == 5:
-                subplot_x = 5
-                subplot_y = 1
-                size = (4, 20)
+                subplot_x = 2
+                subplot_y = 3
+                size = (12, 8)
             elif num_decays == 10:
-                subplot_x = 5
-                subplot_y = 2
-                size = (8, 20)
+                subplot_x = 3
+                subplot_y = 4
+                size = (16, 12)
         elif label == "B_D":
             if num_decays == 1:
-                subplot_x = 2
-                subplot_y = 2
-                size = (8, 8)
+                subplot_x = 1
+                subplot_y = 4
+                size = (16, 4)
             elif num_decays == 2:
-                subplot_x = 2
-                subplot_y = 2
-                size = (8, 8)
+                subplot_x = 1
+                subplot_y = 4
+                size = (16, 4)
             elif num_decays == 5:
                 subplot_x = 5
                 subplot_y = 4
@@ -405,9 +389,19 @@ def mass_plotter(trainings, label, num_decays, type,log):
 
 
         fig, axs = plt.subplots(subplot_x, subplot_y, figsize=size, constrained_layout=True)
+        if label == "D" and num_decays == 5:
+            fig.delaxes(axs[1, 2])
+        elif label == "D" and num_decays == 10:
+            fig.delaxes(axs[2, 0])
+            fig.delaxes(axs[2, 3])
+
+
+
         axs = axs.flatten()
         count = 0
-
+        wasserstein_data = []
+        training_labels = []
+        decay_labels = []
         for i, results in enumerate(all_results):
 
             unique_combinations = results[
@@ -447,21 +441,46 @@ def mass_plotter(trainings, label, num_decays, type,log):
                 #print(i)
                 #print(training_nums)
                 axs[count].set_title(f"Training {training_nums[i]}: {decay}")
-                count += 1
+                wasserstein_data.append(w_val)
+                training_labels.append(f"Training {training_nums[i]}")
+                decay_labels.append(f"{Particle.from_pdgid(unique_combination[3]).name} --> {Particle.from_pdgid(unique_combination[0]).name} {Particle.from_pdgid(unique_combination[1]).name} {Particle.from_pdgid(unique_combination[2]).name}")
 
-
+                if label == "D" and num_decays == 10 and count == 7:
+                    count += 2
+                else:
+                    count += 1
 
         pdf.savefig(fig)
         plt.close(fig)
 
-def mass_plotter_dalitz(trainings, label, num_decays, type, dalitz_bins):
-    folder = "dalitz_mass_plots"
-    dest_path = f"/Users/adelrio/Desktop/training_files/{folder}"
+    df = pd.DataFrame({
+        "training": training_labels,
+        "decay": decay_labels,
+        "wasserstein": wasserstein_data
+    })
+    folder = "wasserstein"
+    df_path = f"/Users/adelrio/Desktop/training_files/plots/{folder}"
+    df_file = f"{df_path}/{label}_{num_decays}mode{frame}{log}_wasserstein.csv"
+    df.to_csv(df_file, index=False)
+
+
+def mass_plotter_dalitz(trainings, label, num_decays, type, dalitz_bins, single=False, single_training=0, decay_mode=0):
+    if single == False:
+        folder = "dalitz_mass_plots"
+
+    else:
+        folder = "individual_dalitz_mass_plots"
+        trainings = [trainings[single_training]]
 
     if ("_rot" in trainings[0][1]):
         frame = "_rot"
     else:
         frame = ""
+
+
+    dest_path = f"/Users/adelrio/Desktop/training_files/plots/{folder}"
+
+
 
     all_results = []
     training_nums = []
@@ -471,10 +490,14 @@ def mass_plotter_dalitz(trainings, label, num_decays, type, dalitz_bins):
         file = f"/Users/adelrio/Desktop/training_files/training{experiment}/training{experiment}_results_Epoch_{epochs}_{type}_data.pkl"
         all_results.append(open_results_file(file))
         training_nums.append(training_thesis)
-    # print(training_nums)
-    # print(len(all_results))
+    #print(training_nums)
+    #print(len(all_results))
 
-    pdf_path = f"{dest_path}/{label}_{num_decays}mode{frame}_dalitz_mass_plots.pdf"
+    if single == False:
+        pdf_path = f"{dest_path}/{label}_{num_decays}mode{frame}_dalitz_mass_plots.pdf"
+    else:
+        pdf_path = f"{dest_path}/{label}_{num_decays}mode_training{training_thesis}{frame}_dalitz_mass_plots.pdf"
+
     with PdfPages(pdf_path) as pdf:
         if label == "D":
             if num_decays == 1:
@@ -506,19 +529,25 @@ def mass_plotter_dalitz(trainings, label, num_decays, type, dalitz_bins):
                 subplot_x = 5
                 subplot_y = 8
                 size = (40, 20)
+        if single == True:
+            subplot_x = 1
+            subplot_y = 2
+            size = (8, 4)
 
 
 
         fig, axs = plt.subplots(subplot_x, subplot_y, figsize=size, constrained_layout=True)
         axs = axs.flatten()
         count = 0
-
         for i, results in enumerate(all_results):
 
             unique_combinations = results[
                 ['particle_1_PID', 'particle_2_PID', 'particle_3_PID', 'mother']].drop_duplicates()
             unique_combinations = unique_combinations.values.tolist()
-
+            if single == True and label == "D" and num_decays > 1:
+                unique_combinations = [unique_combinations[decay_mode]]
+            elif single == True and label == "B_D":
+                unique_combinations = [unique_combinations[decay_mode]]
             for unique_combination in unique_combinations:
                 results_i = results.query(
                     f'particle_1_PID=={unique_combination[0]} and particle_2_PID=={unique_combination[1]} and particle_3_PID=={unique_combination[2]}')
@@ -579,57 +608,139 @@ def mass_plotter_dalitz(trainings, label, num_decays, type, dalitz_bins):
         pdf.savefig(fig)
         plt.close(fig)
 
+def individual_plotter(training_val, particle, coord_1, coord_2, type, dalitz_bins, decay_mode="none"):
+    folder = "individual_plots"
+    dest_path = f"/Users/adelrio/Desktop/training_files/plots/{folder}"
+
+    if ("_rot" in training_val[1]):
+        frame = "_rot"
+    else:
+        frame = ""
+
+    [training_thesis, experiment, epochs] = training_val
+    file = f"/Users/adelrio/Desktop/training_files/training{experiment}/training{experiment}_results_Epoch_{epochs}_{type}_data.pkl"
+    results = open_results_file(file)
+    unique_combinations = results[['particle_1_PID', 'particle_2_PID', 'particle_3_PID', 'mother']].drop_duplicates()
+    unique_combinations = unique_combinations.values.tolist()
+    if decay_mode != "none":
+        unique_combinations = [unique_combinations[decay_mode]]
+
+    pdf_path = f"{dest_path}/training{training_thesis}{frame}_momentum_plots.pdf"
+
+    with PdfPages(pdf_path) as pdf:
+
+        for count, unique_combination in enumerate(unique_combinations):
+            # unique_combination_str = f'{unique_combination[0]}_{unique_combination[1]}_{unique_combination[2]}_'
+            results_i = results.query(
+                f'particle_1_PID=={unique_combination[0]} and particle_2_PID=={unique_combination[1]} and particle_3_PID=={unique_combination[2]}')
+
+            fig, axs = plt.subplots(1, 4, figsize=(18, 4), constrained_layout=True)
+            w_val, w_val_symlog = dalitz_truth_sampled_momenta(axs, results_i, particle, coord_1, coord_2, dalitz_bins,unique_combination)
+
+            decay = (f"{Particle.from_pdgid(unique_combination[3]).name} → "
+                     f"{Particle.from_pdgid(unique_combination[0]).name} "
+                     f"{Particle.from_pdgid(unique_combination[1]).name} "
+                     f"{Particle.from_pdgid(unique_combination[2]).name}")
+
+            # print(i)
+            # print(training_nums)
+            axs = axs.flatten()
+
+            axs[0].set_title(f"Truth: Training {training_thesis} {decay}")
+            axs[1].set_title(f"Sampled: Training {training_thesis} {decay}")
+            axs[2].set_title(f"Truth: Training {training_thesis} {decay}")
+            axs[3].set_title(f"Sampled: Training {training_thesis} {decay}")
+
+            pdf.savefig(fig)
+        plt.close(fig)
+
+if single_plot == True:
+    #particles = [1, 2, 3, "p_32", "p_13"]
+    #coordinates_dalitz = [["PX", "PY"],
+                          #["PX", "PZ"],
+                          #["PY", "PZ"]]
+
+    individual_plotter(one_D[0], 1, "PX", "PY", "sampled", dalitz_bins)
+    individual_plotter(one_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins)
+
+    individual_plotter(two_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 0)
+
+    individual_plotter(five_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 2)
+
+    individual_plotter(ten_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 0)
+
+    individual_plotter(one_B_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 1)
+
+    individual_plotter(two_B_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 1)
+
+    individual_plotter(five_B_D_rot[0], 1, "PX", "PY", "sampled", dalitz_bins, 1)
+
+if single_dalitz_plot == True:
+    mass_plotter_dalitz(one_D, "D", 1, "sampled", dalitz_bins, True, 0)
+    mass_plotter_dalitz(one_D_rot, "D", 1, "sampled", dalitz_bins, True, 0)
+
+    mass_plotter_dalitz(two_D_rot, "D", 2, "sampled", dalitz_bins, True, 0, 1)
+
+    mass_plotter_dalitz(five_D_rot, "D", 5, "sampled", dalitz_bins, True, 0, 2)
+
+    mass_plotter_dalitz(ten_D_rot, "D", 10, "sampled", dalitz_bins, True, 0, 2)
+
+    mass_plotter_dalitz(one_B_D_rot, "B_D", 1, "sampled", dalitz_bins, True, 0, 1)
+
+    mass_plotter_dalitz(two_B_D_rot, "B_D", 2, "sampled", dalitz_bins, True, 0, 1)
+
+    mass_plotter_dalitz(five_B_D_rot, "B_D", 5, "sampled", dalitz_bins, True, 0, 1)
 
 #print(unique_combinations)
 if mass_plots == True:
-    mass_plotter(one_D, "D", 1, "sampled", False)
+    #mass_plotter(one_D, "D", 1, "sampled", False)
     mass_plotter(one_D, "D", 1, "sampled", True)
 
-    mass_plotter(one_D_rot, "D", 1, "sampled", False)
+    #mass_plotter(one_D_rot, "D", 1, "sampled", False)
     mass_plotter(one_D_rot, "D", 1, "sampled", True)
 
-    mass_plotter(two_D_rot, "D", 2, "sampled", False)
+    #mass_plotter(two_D_rot, "D", 2, "sampled", False)
     mass_plotter(two_D_rot, "D", 2, "sampled", True)
 
-    mass_plotter(five_D_rot, "D", 5, "sampled", False)
+    #mass_plotter(five_D_rot, "D", 5, "sampled", False)
     mass_plotter(five_D_rot, "D", 5, "sampled", True)
 
-    mass_plotter(ten_D_rot, "D", 10, "sampled", False)
+    #mass_plotter(ten_D_rot, "D", 10, "sampled", False)
     mass_plotter(ten_D_rot, "D", 10, "sampled", True)
 
-    mass_plotter(one_B_D_rot, "B_D", 1, "sampled", False)
+    #mass_plotter(one_B_D_rot, "B_D", 1, "sampled", False)
     mass_plotter(one_B_D_rot, "B_D", 1, "sampled", True)
 
-    mass_plotter(two_B_D_rot, "B_D", 2, "sampled", False)
+    #mass_plotter(two_B_D_rot, "B_D", 2, "sampled", False)
     mass_plotter(two_B_D_rot, "B_D", 2, "sampled", True)
 
-    mass_plotter(five_B_D_rot, "B_D", 5, "sampled", False)
+    #mass_plotter(five_B_D_rot, "B_D", 5, "sampled", False)
     mass_plotter(five_B_D_rot, "B_D", 5, "sampled", True)
 
 
 if dalitz_mass_plots == True:
+    #mass_plotter_dalitz(one_D, "D", 1, "sampled", dalitz_bins)
     mass_plotter_dalitz(one_D, "D", 1, "sampled", dalitz_bins)
-    mass_plotter_dalitz(one_D, "D", 1, "sampled", dalitz_bins)
 
+    #mass_plotter_dalitz(one_D_rot, "D", 1, "sampled", dalitz_bins)
     mass_plotter_dalitz(one_D_rot, "D", 1, "sampled", dalitz_bins)
-    mass_plotter_dalitz(one_D_rot, "D", 1, "sampled", dalitz_bins)
 
+    #mass_plotter_dalitz(two_D_rot, "D", 2, "sampled", dalitz_bins)
     mass_plotter_dalitz(two_D_rot, "D", 2, "sampled", dalitz_bins)
-    mass_plotter_dalitz(two_D_rot, "D", 2, "sampled", dalitz_bins)
 
+    #mass_plotter_dalitz(five_D_rot, "D", 5, "sampled", dalitz_bins)
     mass_plotter_dalitz(five_D_rot, "D", 5, "sampled", dalitz_bins)
-    mass_plotter_dalitz(five_D_rot, "D", 5, "sampled", dalitz_bins)
 
+    #mass_plotter_dalitz(ten_D_rot, "D", 10, "sampled", dalitz_bins)
     mass_plotter_dalitz(ten_D_rot, "D", 10, "sampled", dalitz_bins)
-    mass_plotter_dalitz(ten_D_rot, "D", 10, "sampled", dalitz_bins)
 
+    #mass_plotter_dalitz(one_B_D_rot, "B_D", 1, "sampled", dalitz_bins)
     mass_plotter_dalitz(one_B_D_rot, "B_D", 1, "sampled", dalitz_bins)
-    mass_plotter_dalitz(one_B_D_rot, "B_D", 1, "sampled", dalitz_bins)
 
-    mass_plotter_dalitz(two_B_D_rot, "B_D", 2, "sampled", dalitz_bins)
+    #mass_plotter_dalitz(two_B_D_rot, "B_D", 2, "sampled", dalitz_bins)
     mass_plotter_dalitz(two_B_D_rot, "B_D", 2, "sampled", dalitz_bins)
 
-    mass_plotter_dalitz(five_B_D_rot, "B_D", 5, "sampled", dalitz_bins)
+    #mass_plotter_dalitz(five_B_D_rot, "B_D", 5, "sampled", dalitz_bins)
     mass_plotter_dalitz(five_B_D_rot, "B_D", 5, "sampled", dalitz_bins)
 
 if plots == True:
