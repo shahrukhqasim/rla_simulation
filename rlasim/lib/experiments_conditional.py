@@ -15,6 +15,9 @@ from rlasim.lib.organise_data import ThreeBodyDecayDataset, OnlineThreeBodyDecay
     PostProcessor, MomentaCatPreprocessor
 from rlasim.lib.plotting import ThreeBodyDecayPlotter, plot_summaries,plot_latent_space
 
+#import csv
+import pickle
+
 Tensor = TypeVar('torch.tensor')
 
 
@@ -296,8 +299,25 @@ class ConditionalThreeBodyDecayVaeSimExperiment(pl.LightningModule):
                                        f"{self.logger.name}_{str}_Epoch_{self.current_epoch}_")
             # try:
             plot_latent_space(samples, path=path+'latent_space_')
-            plot_summaries(samples, path=path+'reco_', only_summary=False, t2='reconstructed')
-            plot_summaries(samples, path=path+'sampled_', only_summary=False, t2='sampled')
+            #plot_summaries(samples, path=path+'reco_', only_summary=False, t2='reconstructed')
+            #plot_summaries(samples, path=path+'sampled_', only_summary=False, t2='sampled')
+            reconstructed_results = plot_summaries(samples, path=path+'reco_', only_summary=False, t2='reconstructed')
+            sampled_results = plot_summaries(samples, path=path+'sampled_', only_summary=False, t2='sampled')
+
+            #with open(f"Epoch_{self.current_epoch}_Data.csv", "w") as csvfile:
+            #    writer = csv.DictWriter(csvfile, )
+
+            """w = csv.writer(open(f"Epoch_{self.current_epoch}_results.csv", "w"))
+
+            for key, val in sampled_results:
+                w.writerow([key, val])
+            """
+
+            with open(f'{path}reconstructed_data.pkl', 'wb') as handle:
+                pickle.dump(reconstructed_results, handle)
+
+            with open(f'{path}sampled_data.pkl', 'wb') as handle:
+                pickle.dump(sampled_results, handle)
 
             # except Exception as e:
             #     print("Error occurred in plot summaries", e, file=sys.stderr)

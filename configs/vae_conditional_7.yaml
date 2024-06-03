@@ -1,9 +1,9 @@
 model_params:
-  name: 'MlpConditionalVAE_with_masses_v2'
+  name: 'training7_rot_final'
 #  data_feature_dim: [ 3, 3 ]
   latent_dim: 16
-#  conditional_feats: { 'momenta_mother_pp': [ 1, 3 ], 'momenta_mother': [ 1, 3 ], 'particle_1_M': [ 1 ], 'particle_2_M': [ 1 ], 'particle_3_M': [ 1 ], 'mother_M_TRUE': [ 1 ] }
-  conditional_feats: {}
+  conditional_feats: { 'particle_1_M_TRUE': [ 1 ], 'particle_2_M_TRUE': [ 1 ], 'particle_3_M_TRUE': [ 1 ], 'mother_M_TRUE': [ 1 ] }
+#  conditional_feats: {}
 #  data_feats: { 'momenta_pp': [ 3, 3 ], 'momenta': [ 3, 3 ], 'mother_M_TRUE': [ 1 ]}
 #  data_feats: {'momenta': [ 3, 3 ], 'mother_M_TRUE': [ 1 ] }
   data_feats: {'momenta': [ 3, 3 ]}
@@ -31,7 +31,7 @@ trainer_params:
 
 logging_params:
   save_dir: "logs/"
-  name: "MlpConditionalVAE_with_masses_v2"
+  name: "training7_rot_final"
 
 data_params:
   train_batch_size: 10000
@@ -43,17 +43,19 @@ data_params:
   load_together: 1000000
   data_path:
     train:
-      path: "data/single_mode_train.root"
+      # change to rot root file
+      path: "data/D+_1mode_pi+mu+mu-_rot.root"
       num_blocks: 1000
       block_size: 10000
     validate:
       # path: "data/two_modes_test.root"
-      path: "data/single_mode_train.root"
-      num_blocks: 10
+      path: "data/D+_1mode_pi+mu+mu-_rot.root"
+      num_blocks: 1000
       block_size: 10000
 
 checkpoint:
-  path: "logs/MlpConditionalVAE_with_masses_v2/version_24/checkpoints/last.ckpt"
+  #path: "logs/training1/version_24/checkpoints/last.ckpt"
+  path: ""
 
 generate_params:
   pdf_prefix: ""
@@ -79,8 +81,12 @@ plotter:
   conditions: [
 #    ['{momenta_mother}[:,0,2] < 1000','${p_m}_z$ < 1000'],
 #    ['{particle_1_PID} == -11','At least one decay product is e+'],
-    ['np.logical_and({particle_1_PID} == 321, np.logical_and({particle_2_PID} == 321, np.logical_and({particle_3_PID} == -321, {mother_PID} == 411)))', '$D^+ -> K^+ K^+ K^-$'],
-#    ['np.logical_and({particle_1_PID} == -11, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == +11, {mother_PID} == 411)))', '$D^+ -> e^+ e^+ e^-$'],
+#      ['np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} = 12, {mother_PID} == 411)))', '$D+ -> K0b e+ nue$']
+#    ['np.logical_and({particle_1_PID} == 321, np.logical_and({particle_2_PID} == 321, np.logical_and({particle_3_PID} == -321, {mother_PID} == 411)))', '$D^+ -> K^+ K^+ K^-$'],
+      ['np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == 12, {mother_PID} == 411)))', '$D+ -> K0b e+ nue$'],
+      [ 'np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -13, np.logical_and({particle_3_PID} == -14, {mother_PID} == 411)))', '$D+ -> Kob mu+ anti-numu'],
+
+    #    ['np.logical_and({particle_1_PID} == -11, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == +11, {mother_PID} == 411)))', '$D^+ -> e^+ e^+ e^-$'],
   ]
 
 

@@ -11,6 +11,7 @@ import yaml
 from particle import Particle
 from tqdm import tqdm
 
+
 from rlasim.lib.data_core import get_pdgid
 import pandas as pd
 
@@ -37,14 +38,16 @@ particle_types["mu+"] = "lepton"
 particle_types["nue"] = "lepton_neutrino"
 particle_types["anti-nue"] = "lepton_neutrino"
 particle_types["gamma"] = "photon"
+particle_types["K0b"] = "meson"
 
 
 
 if os.getlogin() == 'am13743':
     rapid_sim_path = '$RAPIDSIM_ROOT/build/src/RapidSim.exe'
 else:
-    rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
-    
+    #rapid_sim_path = '~/RapidSim/RapidSim/build/src/RapidSim.exe'
+    rapid_sim_path = 'RapidSim.exe'
+
 if os.environ.get('RAPID_SIM_EXE_PATH') is not None:
     print(f"Settling rapid_sim_path to {os.environ.get('RAPID_SIM_EXE_PATH')}")
     rapid_sim_path = os.environ.get('RAPID_SIM_EXE_PATH')
@@ -76,7 +79,7 @@ def run_command(packed):
         file2 = uproot.recreate(f'rs_{rs_idx}_tree2.root')
         file2['DecayTree'] = results
         file2.close()
-    except:
+    except ZeroDivisionError:
         print(f'rs_{rs_idx}_tree.root NOT PRESENT')
 
 def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_name='output'):
@@ -93,8 +96,66 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
     if config_file is None:
 
         decay_channels = {}
-        decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
-        decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+
+        D_decay_channels = [
+            {"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+            {"decay": ["K0b", "mu+", "numu"], "evtgen_model": "PHSP"},
+            {"decay": ["pi-", "pi+", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e-", "mu+"], "evtgen_model": "PHSP"}
+        ]
+
+        B_decay_channels = [
+            {"decay": ["K+", "pi-", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "pi0", "pi0"], "evtgen_model": "PHSP"},
+            {"decay": ["pi-", "pi+", "pi+"], "evtgen_model": "PHSP"},
+            {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["K+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "e-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "mu+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e+", "mu-"], "evtgen_model": "PHSP"},
+            {"decay": ["pi+", "e-", "mu+"], "evtgen_model": "PHSP"}
+        ]
+
+        #decay_channels["D+"] = [D_decay_channels[0]]
+        #decay_channels["B+"] = [B_decay_channels[0]]
+        decay_channels["D+"] = [D_decay_channels[5],
+                                D_decay_channels[6],
+                                D_decay_channels[7],
+                                D_decay_channels[8],
+                                D_decay_channels[9]
+                                ]
+
+        decay_channels["B+"] = [B_decay_channels[5],
+                                B_decay_channels[6],
+                                B_decay_channels[7],
+                                B_decay_channels[8],
+                                B_decay_channels[9]
+                                ]
+
+
+        #decay_channels["B+"] = [B_decay_channels[7], B_decay_channels[8]]
+
+        #decay_channels["D+"] = [{"decay": ["anti-K*(892)0", "e+", "nue"], "evtgen_model": "D_DALITZ"}]
+        #decay_channels["D+"] = [{"decay":["K+", "pi+", "pi-"], "evtgen_model":"D_DALITZ"}]
+        #decay_channels["B+"] = [{"decay":["K+", "e+", "e-"], "evtgen_model":"PHSP"}]
+
+        """decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+                                {"decay":["K0b", "mu+", "anti-numu"], "evtgen_model":"PHSP"},
+                                {"decay": ["K+", "pi+", "pi-"], "evtgen_model": "PHSP"},
+                                {"decay": ["K-", "K+", "K+"], "evtgen_model": "PHSP"},
+                                {"decay": ["pi-", "K+", "K+"], "evtgen_model": "PHSP"}]
+        """
+        """decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"},
+                                {"decay": ["K0b", "mu+", "anti-numu"], "evtgen_model": "PHSP"}]
+        """
+        #decay_channels["D+"] = [{"decay": ["K0b", "e+", "nue"], "evtgen_model": "PHSP"}]
 
         N_channels_total = 1
         N_events = 1E5
@@ -111,7 +172,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
                                 "gamma",
                                 "K+", "pi+",
                                 "e-", "mu-",
-                                "nue",
+                                "nue", "K0b"
                             ]
 
         # mother_particles = [
@@ -311,6 +372,7 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
         for particle_combination_idx, particle_combination in enumerate(tqdm(decay_channels[particle_m])):
 
             N = int(N_events/N_channels_total)
+            #N = 10000
 
             particle_i = particle_combination["decay"][0]
             particle_j = particle_combination["decay"][1]
@@ -355,4 +417,4 @@ def run(config_file=None, section=None, dont_clean=False, N_events=1E6, output_n
 
 
 if __name__ == '__main__':
-    argh.dispatch_command(run)
+    argh.dispatch_command(run(output_name="training25"))
