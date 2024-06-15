@@ -1,0 +1,78 @@
+model_params:
+  name: 'training_ship_1'
+  latent_dim: 16
+  conditional_feats: { 'track_px': [ 1 ], 'track_py': [ 1 ], 'track_pz': [ 1 ], 'track_energy': [ 1 ]}
+  data_feats: {'dau_px': [ 50,  1], 'dau_py': [ 50,  1], 'dau_pz': [ 50,  1], 'dau_energy': [ 50,  1], 'dau_mask': [50, 1]}
+
+exp_params:
+  adam_lr: 0.0001
+  manual_seed: 1265
+  batch_size: 3000
+  reuse_prev_epoch_if_next_not_ready: True
+  loss_params:
+#    kld_weight: 0.00025
+    kld_weight: 0.001
+    dalitz_weight: 0.
+    predicted_var: "momenta_reconstructed"
+    truth_var: "momenta"
+    loss_type: "quantile"
+    parent_mass_weight: 0.0
+#    kld_weight: 0.0s
+
+trainer_params:
+  max_epochs: 200000
+  check_val_every_n_epoch: 50
+  num_sanity_val_steps: 5
+
+logging_params:
+  save_dir: "logs/"
+  name: "training_ship_set_0"
+
+data_params:
+  batch_size: 10000
+  split_train: 6
+  split_test: 1
+  split_validate: 3
+  seed: 100
+  data_path_mothers: data/ship/muonDIS_mu_mctrack_converted.pkl
+  data_path_daughters: data/ship/muonDIS_mu_mctrack_dau_converted.pkl
+  zero_pad: True
+  max_num_daughters: 50
+
+checkpoint:
+  #path: "logs/training1/version_24/checkpoints/last.ckpt"
+  path: ""
+
+generate_params:
+  pdf_prefix: ""
+  batch_size: 10000
+  predict_batch_size: 10000
+  kld_weight: 0.00025
+
+
+plotter:
+  check_file_prefix: 'logs/plotter_checks/data_check'
+  ranges:
+    px_min: -3.
+    px_max: 3.
+    py_min: -3.
+    py_max: 3.
+    pz_min: -5.
+    pz_max: 5000.
+  unit: '[GeV]'
+
+# Conditions will be an array of strings or an array of arrays.
+# If its an array of arrays, the second axis will always be 2 and the second element will refer to what to render
+# TODO: Should change it to dict?
+  conditions: [
+#    ['{momenta_mother}[:,0,2] < 1000','${p_m}_z$ < 1000'],
+#    ['{particle_1_PID} == -11','At least one decay product is e+'],
+#      ['np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} = 12, {mother_PID} == 411)))', '$D+ -> K0b e+ nue$']
+#    ['np.logical_and({particle_1_PID} == 321, np.logical_and({particle_2_PID} == 321, np.logical_and({particle_3_PID} == -321, {mother_PID} == 411)))', '$D^+ -> K^+ K^+ K^-$'],
+      ['np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == 12, {mother_PID} == 411)))', '$D+ -> K0b e+ nue$'],
+      [ 'np.logical_and({particle_1_PID} == -311, np.logical_and({particle_2_PID} == -13, np.logical_and({particle_3_PID} == -14, {mother_PID} == 411)))', '$D+ -> Kob mu+ anti-numu'],
+
+    #    ['np.logical_and({particle_1_PID} == -11, np.logical_and({particle_2_PID} == -11, np.logical_and({particle_3_PID} == +11, {mother_PID} == 411)))', '$D^+ -> e^+ e^+ e^-$'],
+  ]
+
+

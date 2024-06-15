@@ -12,3 +12,4 @@ rlasim/bin/private
 PIDcalib/*/*.pkl
 PIDcalib/*/*.pdf
 PIDcalib/*/*.npy
+checks

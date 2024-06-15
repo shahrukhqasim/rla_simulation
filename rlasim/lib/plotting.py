@@ -605,7 +605,7 @@ def plot_latent_space(samples, path='latent_space_'):
 	pdf.close()
 	pdf2.close()
 
-def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
+def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', skip_derive_vars=False):
 	if type(all_results) is list:
 		all_results = tensors_dict_join(all_results)
 	data_samples_2 = {}
@@ -618,27 +618,29 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 
 	array_PID = np.asarray([all_results['particle_1_PID'], all_results['particle_2_PID'], all_results['particle_3_PID'], all_results['mother_PID']])
-	unique_combinations = np.swapaxes(np.unique(np.abs(array_PID), axis=1),0,1)
+	unique_combinations = np.swapaxes(np.unique(array_PID, axis=1),0,1)
 	for unique_combination in unique_combinations:
 		print("Check May 24: ", len(unique_combinations), unique_combination)
 
-
-	results = {}
-	results['particle_1_PID'] = all_results['particle_1_PID']
-	results['particle_2_PID'] = all_results['particle_2_PID']
-	results['particle_3_PID'] = all_results['particle_3_PID']
-	results['mother'] = all_results['mother_PID']
-	for particle_idx, particle in enumerate(['1','2','3']):
-		results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M']
-		for coordinate_idx, coordinate in enumerate(['PX','PY','PZ']):
-			results[f'particle_{particle}_{coordinate}'] = all_results['momenta'][:,particle_idx,coordinate_idx]
-			if f'momenta_{t2}' in all_results:
-				results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results[f'momenta_{t2}'][:,particle_idx,coordinate_idx]
-			else:
-				results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results['momenta'][:,particle_idx,coordinate_idx]
-			print('XXUU: ', f'momenta_{t2}', results[f'particle_{particle}_{coordinate}_SAMPLED'].shape)
-
+	if not skip_derive_vars:
+		results = {}
+		results['particle_1_PID'] = all_results['particle_1_PID']
+		results['particle_2_PID'] = all_results['particle_2_PID']
+		results['particle_3_PID'] = all_results['particle_3_PID']
+		results['mother'] = all_results['mother_PID']
+		for particle_idx, particle in enumerate(['1','2','3']):
+			results[f'particle_{particle}_M'] = all_results[f'particle_{particle}_M']
+			for coordinate_idx, coordinate in enumerate(['PX','PY','PZ']):
+				results[f'particle_{particle}_{coordinate}'] = all_results['momenta'][:,particle_idx,coordinate_idx]
+				if f'momenta_{t2}' in all_results:
+					results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results[f'momenta_{t2}'][:,particle_idx,coordinate_idx]
+				else:
+					results[f'particle_{particle}_{coordinate}_SAMPLED'] = all_results['momenta'][:,particle_idx,coordinate_idx]
+				print('XXUU: ', f'momenta_{t2}', results[f'particle_{particle}_{coordinate}_SAMPLED'].shape)
+	else:
+		results = all_results
 	results = pd.DataFrame.from_dict(results)
+
 
 	# results = results.query('particle_1_PZ>0')
 	# results = results.query('particle_2_PZ>0')
@@ -648,9 +650,9 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	# mother (formally B)
 	################################################################################
 	for tag in ['', "_SAMPLED"]:
-		pe_1 = np.sqrt(results.particle_1_M**2 + results[f'particle_1_PX{tag}']**2 + results[f'particle_1_PY{tag}']**2 + results[f'particle_1_PZ{tag}']**2)
-		pe_2 = np.sqrt(results.particle_2_M**2 + results[f'particle_2_PX{tag}']**2 + results[f'particle_2_PY{tag}']**2 + results[f'particle_2_PZ{tag}']**2)
-		pe_3 = np.sqrt(results.particle_3_M**2 + results[f'particle_3_PX{tag}']**2 + results[f'particle_3_PY{tag}']**2 + results[f'particle_3_PZ{tag}']**2)
+		pe_1 = np.sqrt(results['particle_1_M']**2 + results[f'particle_1_PX{tag}']**2 + results[f'particle_1_PY{tag}']**2 + results[f'particle_1_PZ{tag}']**2)
+		pe_2 = np.sqrt(results['particle_2_M']**2 + results[f'particle_2_PX{tag}']**2 + results[f'particle_2_PY{tag}']**2 + results[f'particle_2_PZ{tag}']**2)
+		pe_3 = np.sqrt(results['particle_3_M']**2 + results[f'particle_3_PX{tag}']**2 + results[f'particle_3_PY{tag}']**2 + results[f'particle_3_PZ{tag}']**2)
 
 		pe = pe_1 + pe_2 + pe_3
 		px = results[f'particle_1_PX{tag}'] + results[f'particle_2_PX{tag}'] + results[f'particle_3_PX{tag}']
@@ -672,9 +674,9 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 	# DALITZ
 	################################################################################
 	for tag in ['', "_SAMPLED"]:
-		pe_1 = np.sqrt(results.particle_1_M**2 + results[f'particle_1_PX{tag}']**2 + results[f'particle_1_PY{tag}']**2 + results[f'particle_1_PZ{tag}']**2)
-		pe_2 = np.sqrt(results.particle_2_M**2 + results[f'particle_2_PX{tag}']**2 + results[f'particle_2_PY{tag}']**2 + results[f'particle_2_PZ{tag}']**2)
-		pe_3 = np.sqrt(results.particle_3_M**2 + results[f'particle_3_PX{tag}']**2 + results[f'particle_3_PY{tag}']**2 + results[f'particle_3_PZ{tag}']**2)
+		pe_1 = np.sqrt(results['particle_1_M']**2 + results[f'particle_1_PX{tag}']**2 + results[f'particle_1_PY{tag}']**2 + results[f'particle_1_PZ{tag}']**2)
+		pe_2 = np.sqrt(results['particle_2_M']**2 + results[f'particle_2_PX{tag}']**2 + results[f'particle_2_PY{tag}']**2 + results[f'particle_2_PZ{tag}']**2)
+		pe_3 = np.sqrt(results['particle_3_M']**2 + results[f'particle_3_PX{tag}']**2 + results[f'particle_3_PY{tag}']**2 + results[f'particle_3_PZ{tag}']**2)
 
 		pe = pe_3 + pe_2
 		px = results[f'particle_3_PX{tag}'] + results[f'particle_2_PX{tag}']
@@ -719,7 +721,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled'):
 
 		unique_combination_str = f'{unique_combination[3]}_{unique_combination[0]}_{unique_combination[1]}_{unique_combination[2]}_'
 
-		results_i = results.query(f'abs(particle_1_PID)=={unique_combination[0]} and abs(particle_2_PID)=={unique_combination[1]} and abs(particle_3_PID)=={unique_combination[2]}')
+		results_i = results.query(f'particle_1_PID=={unique_combination[0]} and particle_2_PID=={unique_combination[1]} and particle_3_PID=={unique_combination[2]} and mother_PID=={unique_combination[3]}')
 		print(results_i.shape, results.shape)
 
 		coordinates = ['PX', 'PY', 'PZ']
