@@ -2,7 +2,9 @@ model_params:
   name: 'training_ship_1'
   latent_dim: 16
   conditional_feats: { 'track_px': [ 1 ], 'track_py': [ 1 ], 'track_pz': [ 1 ], 'track_energy': [ 1 ]}
+#  conditional_feats: { 'track_px': [ 1 ]}
   data_feats: {'dau_px': [ 50,  1], 'dau_py': [ 50,  1], 'dau_pz': [ 50,  1], 'dau_energy': [ 50,  1], 'dau_mask': [50, 1]}
+#  data_feats: {'dau_mask': [50, 1]}
 
 exp_params:
   adam_lr: 0.0001
@@ -10,14 +12,9 @@ exp_params:
   batch_size: 3000
   reuse_prev_epoch_if_next_not_ready: True
   loss_params:
-#    kld_weight: 0.00025
     kld_weight: 0.001
-    dalitz_weight: 0.
-    predicted_var: "momenta_reconstructed"
+    regression_weight: 1.
     truth_var: "momenta"
-    loss_type: "quantile"
-    parent_mass_weight: 0.0
-#    kld_weight: 0.0s
 
 trainer_params:
   max_epochs: 200000

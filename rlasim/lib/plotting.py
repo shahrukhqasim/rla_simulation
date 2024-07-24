@@ -20,8 +20,256 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 import pickle
 from particle import Particle
+from typing import Dict
 
 small_fact = 1
+
+class BasePlotter():
+	def make_plots(self, all_results, path):
+		raise NotImplementedError('Derive from this class')
+
+
+class GaussianBlobsPlotter(BasePlotter):
+	def __init__(self, **kwargs):
+		super().__init__()
+
+	def make_plots(self, all_results: dict, path: str):
+		if type(all_results) is list:
+			all_results = tensors_dict_join(all_results)
+		data_samples_2 = {}
+		for k, v in all_results.items():
+			if isinstance(v, torch.Tensor):
+				data_samples_2[k] = v.cpu().numpy()
+			else:
+				data_samples_2[k] = v
+		all_results = data_samples_2
+
+		x = all_results.get('x')
+		y = all_results.get('y')
+		labels = all_results.get('label')
+
+		x_sampled = all_results.get('x_sampled')
+		y_sampled = all_results.get('y_sampled')
+
+		x_reconstructed = all_results.get('x_reconstructed')
+		y_reconstructed = all_results.get('y_reconstructed')
+
+		plots = [
+			(x, None, 'Histogram of x', '-'),
+			(y, None, 'Histogram of y', '-'),
+			(x, y, '2D Histogram of x and y', '-')
+		]
+
+		if x_sampled is not None and y_sampled is not None:
+			plots.append((x_sampled, None, 'Histogram of x_sampled', '-'))
+			plots.append((y_sampled, None, 'Histogram of y_sampled', '-'))
+			plots.append((x_sampled, y_sampled, '2D Histogram of x_sampled and y_sampled', '-'))
+
+		if x_reconstructed is not None and y_reconstructed is not None:
+			plots.append((x_reconstructed, None, 'Histogram of x_reconstructed', '-'))
+			plots.append((y_reconstructed, None, 'Histogram of y_reconstructed', '-'))
+			plots.append(
+				(x_reconstructed, y_reconstructed, '2D Histogram of x_reconstructed and y_reconstructed', '-'))
+
+		num_plots = len(plots)
+		num_cols = 3
+		num_rows = (num_plots + num_cols - 1) // num_cols  # Ceiling division
+
+		with PdfPages(path + '_hists.pdf') as pdf:
+			fig, axs = plt.subplots(num_rows, num_cols, figsize=(15, 5 * num_rows))
+			axs = axs.flatten()
+
+			for idx, (x_data, y_data, title, line_style) in enumerate(plots):
+				if y_data is None:
+					for label in [0, 1]:
+						mask = labels == label
+						label_name = 'Class 0' if label == 0 else 'Class 1'
+						axs[idx].hist(x_data[mask], bins=30, alpha=0.5, label=label_name,
+									  color='blue' if label == 0 else 'red', linestyle=line_style,
+									  histtype='step')
+				else:
+					mask0 = labels == 0
+					mask1 = labels == 1
+					axs[idx].hist2d(x_data[mask0], y_data[mask0], bins=30, cmap='Blues', alpha=0.5)
+					axs[idx].hist2d(x_data[mask1], y_data[mask1], bins=30, cmap='Reds', alpha=0.5)
+
+				axs[idx].set_title(title)
+				axs[idx].legend()
+
+			# Hide any remaining empty subplots
+			for i in range(num_plots, num_rows * num_cols):
+				fig.delaxes(axs[i])
+
+			fig.tight_layout()
+			pdf.savefig(fig)
+			plt.close(fig)
+
+class MuonMatterPlotter(BasePlotter):
+	def __init__(self, from_next=False, **kwargs):
+		self.from_next = from_next
+
+	def make_plots(self, all_results, path):
+		if type(all_results) is list:
+			all_results = tensors_dict_join(all_results)
+		data_samples_2 = {}
+		for k, v in all_results.items():
+			if isinstance(v, torch.Tensor):
+				data_samples_2[k] = v.cpu().numpy()
+			else:
+				data_samples_2[k] = v
+		all_results = data_samples_2
+
+		if self.from_next:
+			all_results['px_loss'] = all_results['px'] - all_results['px_next']
+			all_results['py_loss'] = all_results['py'] - all_results['py_next']
+			all_results['pz_loss'] = all_results['pz'] - all_results['pz_next']
+			if 'px_next_sampled' in all_results:
+				all_results['px_loss_sampled'] = all_results['px'] - all_results['px_next_sampled']
+				all_results['py_loss_sampled'] = all_results['py'] - all_results['py_next_sampled']
+				all_results['pz_loss_sampled'] = all_results['pz'] - all_results['pz_next_sampled']
+			if 'px_next_reconstructed' in all_results:
+				all_results['px_loss_reconstructed'] = all_results['px'] - all_results['px_next_reconstructed']
+				all_results['py_loss_reconstructed'] = all_results['py'] - all_results['py_next_reconstructed']
+				all_results['pz_loss_reconstructed'] = all_results['pz'] - all_results['pz_next_reconstructed']
+		else:
+			0/0
+
+		print(all_results.keys())
+
+		# Define the ranges
+		ranges = [
+			(5, 10),
+			(20, 25),
+			(70, 75),
+			(100, 105),
+			(150, 155),
+			(190, 195)
+		]
+
+		# Create subplots
+		fig, axes = plt.subplots(2, 3, figsize=(10, 6))
+		axes = [item for sublist in axes for item in sublist]
+		def _make(prefix, histtype, color, label=''):
+
+			p_mag_combined = np.sqrt(all_results['px'][:, 0]**2 + all_results['py'][:, 0]**2 + all_results['pz'][:, 0]**2)
+			p_mag_loss_combined = np.sqrt(all_results['px_loss'+prefix][:, 0]**2 + all_results['py_loss'+prefix][:, 0]**2 + all_results['pz_loss'+prefix][:, 0]**2)
+			p_mag_loss_percent_combined = p_mag_loss_combined / p_mag_combined
+
+			# bins = np.linspace(0, 1, 11)
+
+			# Plot data for each range
+			for i, (low, high) in enumerate(ranges):
+				ax = axes[i]
+				mask = (p_mag_combined >= low) & (p_mag_combined <= high)
+				if np.sum(mask) > 0:
+					ax.hist(p_mag_loss_percent_combined[mask], bins=30, color=color, alpha=(0.7 if histtype=='stepfilled' else 1), label=label, histtype=histtype)
+					ax.set_yscale('log')
+					ax.set_title('$%.f~$GeV < $|P|$ < $%.f~$GeV' % (low, high))
+					ax.set_xlabel(r'$\frac{\delta_{\mathrm{step}}|P|}{|P|}$ [GeV]')
+					ax.set_ylabel('Frequency')
+
+		_make('', 'stepfilled', color='r', label='Truth')
+		if 'px_loss_sampled' in all_results:
+			_make('_sampled', 'step', color='tab:blue', label='Sampled')
+		if 'px_loss_reconstructed' in all_results:
+			_make('_reconstructed', 'step', color='tab:green', label='Reconstructed')
+		# Adjust layout and show the plot
+		plt.tight_layout()
+		plt.legend()
+		plt.savefig(path + 'losses.pdf')
+		plt.close(fig)  # Close the figure properly
+
+
+
+		fig, axes = plt.subplots(1, 3, figsize=(10, 4))
+		# axes = [item for sublist in axes for item in sublist]
+
+		def _make_simple_hist(prefix, histtype, color, label=''):
+			x = all_results['px_loss' + prefix]
+			y = all_results['py_loss' + prefix]
+			z = all_results['pz_loss' + prefix]
+
+
+			axes[0].hist(x, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+			axes[1].hist(y, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+			axes[2].hist(z, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+
+		_make_simple_hist('', 'stepfilled', color='r', label='Truth')
+		if 'px_loss_sampled' in all_results:
+			_make_simple_hist('_sampled', 'step', color='tab:blue', label='Sampled')
+		if 'px_loss_reconstructed' in all_results:
+			_make_simple_hist('_reconstructed', 'step', color='tab:green', label='Reconstructed')
+
+		axes[0].set_xlabel('loss $P_x$')
+		axes[1].set_xlabel('loss $P_y$')
+		axes[2].set_xlabel('loss $P_z$')
+
+		axes[0].set_ylabel('Freq. (arb.)')
+		axes[1].set_ylabel('Freq. (arb.)')
+		axes[2].set_ylabel('Freq. (arb.)')
+
+		axes[0].set_yscale('log')
+		axes[1].set_yscale('log')
+		axes[2].set_yscale('log')
+
+		# Adjust layout and show the plot
+		plt.tight_layout()
+		plt.legend()
+		plt.savefig(path + 'hists.pdf')
+		plt.close(fig)  # Close the figure properly
+
+		###
+
+		fig, axes = plt.subplots(1, 3, figsize=(10, 4))
+		# axes = [item for sublist in axes for item in sublist]
+
+		def _make_simple_hist_2(prefix, histtype, color, label=''):
+			x = all_results['px_next' + prefix]
+			y = all_results['py_next' + prefix]
+			z = all_results['pz_next' + prefix]
+
+			axes[0].hist(x, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+			axes[1].hist(y, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+			axes[2].hist(z, bins=30, color=color, alpha=(0.7 if histtype == 'stepfilled' else 1), label=label,
+						 histtype=histtype)
+
+		_make_simple_hist_2('', 'stepfilled', color='r', label='Truth')
+		if 'px_loss_sampled' in all_results:
+			_make_simple_hist_2('_sampled', 'step', color='tab:blue', label='Sampled')
+		if 'px_loss_reconstructed' in all_results:
+			_make_simple_hist_2('_reconstructed', 'step', color='tab:green', label='Reconstructed')
+
+		axes[0].set_xlabel('$P_x$ next')
+		axes[1].set_xlabel('$P_y$ next')
+		axes[2].set_xlabel('$P_z$ next')
+
+		axes[0].set_ylabel('Freq. (arb.)')
+		axes[1].set_ylabel('Freq. (arb.)')
+		axes[2].set_ylabel('Freq. (arb.)')
+
+		axes[0].set_yscale('log')
+		axes[1].set_yscale('log')
+		axes[2].set_yscale('log')
+
+		# Adjust layout and show the plot
+		plt.tight_layout()
+		plt.legend()
+		plt.savefig(path + 'hists_next.pdf')
+		plt.close(fig)  # Close the figure properly
+
+
+def find_plotter(plotter_params) -> BasePlotter:
+	if plotter_params['plotter_name'] == 'MuonMatterPlotter':
+		return MuonMatterPlotter(**plotter_params)
+	if plotter_params['plotter_name'] == 'GaussianBlobsPlotter':
+		return GaussianBlobsPlotter(**plotter_params)
+	else:
+		raise NotImplementedError('Plotter finding not implemented')
 
 class ThreeBodyDecayPlotter:
 	def __init__(self, ranges=None, unit=None, conditions=None, **kwargs):
@@ -546,8 +794,8 @@ def plot_x_y_yerr(ax, data, limits=None, bins=50, label=None, c='tab:blue', mark
 	yerr_points = poisson_asym_errors(y_points)
 	yerr_points = np.where(yerr_points<0, 0, yerr_points)
 
-	ax.errorbar(x_points, y_points, yerr=yerr_points, xerr=xerr_points, 
-				color=c,marker='o',fmt=' ',capsize=2,linewidth=1.75, 
+	ax.errorbar(x_points, y_points, yerr=yerr_points, xerr=xerr_points,
+				color=c,marker='o',fmt=' ',capsize=2,linewidth=1.75,
 				markersize=markersize,label=label,alpha=alpha,zorder=100)
 
 	if also_plot_hist:
@@ -710,7 +958,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 	# B is supposed to be the mother particle (which can be D+ or B+)
 	def symlog(array):
 		return np.sign(array)*np.log(np.abs(array)+1)
-	
+
 	################################################################################
 	# Plotting
 	################################################################################
@@ -732,7 +980,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 
 			ax = plt.subplot(3,3,1)
 
-			plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50, 
+			plt.hist2d(results_i.mass_32**2, results_i.mass_13**2, bins=50,
 					range=[[0, np.amax(results_i.mass_32**2)], [0, np.amax(results_i.mass_13**2)]],
 					norm=LogNorm())
 			plt.xlabel(r"mass$_{32}^2$")
@@ -863,7 +1111,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 
 
 			if not only_summary:
-				
+
 				plt.figure(figsize=(4,4))
 				pdf.savefig(bbox_inches='tight')
 				plt.close()
@@ -872,7 +1120,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 					for coordinate in ['PX', 'PY', 'PZ']:
 
 						print(f'{particle} {coordinate}')
-					
+
 						range_i = np.amax(np.abs(results_i[f'particle_{particle}_{coordinate}']))*1.2
 						range_vec = [-range_i, range_i]
 						range_vec_log = [-np.log(range_i), np.log(range_i)]
@@ -983,7 +1231,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 				for coordinate in ['M', 'PX', 'PY', 'PZ']:
 
 					print(f'mother {coordinate}')
-				
+
 					range_i = np.amax(np.abs(results_i[f'particle_{particle}_{coordinate}']))*1.2
 					range_vec = [-range_i, range_i]
 					range_vec_log = [-np.log(range_i), np.log(range_i)]
@@ -1030,7 +1278,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 					for coordinate in ['M', 'PX', 'PY', 'PZ']:
 
 						print(f'{particle} {coordinate}')
-					
+
 						range_i = np.amax(np.abs(results_i[f'particle_{particle}_{coordinate}']))*1.2
 						range_vec = [-range_i, range_i]
 						range_vec_log = [-np.log(range_i), np.log(range_i)]
@@ -1154,7 +1402,7 @@ def plot_summaries(all_results, path=None, only_summary=False, t2='sampled', ski
 				plt.close()
 
 
-	
+
 		print(f'{unique_combination_str} done')
 
 	return results

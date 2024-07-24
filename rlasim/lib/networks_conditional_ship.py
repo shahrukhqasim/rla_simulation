@@ -11,6 +11,7 @@ from typing import List, Callable, Union, Any, TypeVar, Tuple, Dict
 from torch.nn import functional as F
 from rlasim.lib.networks import BaseVAE
 from operator import mul
+from pytorch3d.loss import chamfer_distance
 
 from rlasim.lib.organise_data import compute_dalitz_masses, compute_parent_mass
 
@@ -75,18 +76,16 @@ class MlpConditionalDecoder(nn.Module):
 
 
 class VaeShipLoss(nn.Module):
-    def __init__(self, kld_weight, dalitz_weight=0.0, parent_mass_weight=0.0, loss_type='mse',
+    def __init__(self, kld_weight, regression_weight=0.0,
                  mask_loss='bce',
                  truth_var='momenta', predicted_var='momenta_reconstructed', **kwards):
         super().__init__()
 
         self.kld_weight = kld_weight
 
-        self.loss_type = loss_type
         self.predicted_var = predicted_var
         self.truth_var = truth_var
-        self.dalitz_weight = dalitz_weight
-        self.parent_mass_weight = parent_mass_weight
+        self.regression_weight = regression_weight
 
     def quantile(self, reco, truth, quantile=0.5):
         errors = truth - reco
@@ -94,15 +93,6 @@ class VaeShipLoss(nn.Module):
         return torch.mean(loss)
 
     def forward(self, sample, iteration=-1):
-        if self.loss_type == 'mse':
-            distance_func = F.mse_loss
-        elif self.loss_type == 'huber':
-            distance_func = F.huber_loss
-        elif self.loss_type == 'quantile':
-            distance_func = self.quantile
-        else:
-            raise ValueError('Unknown value of loss_type')
-
         mu = sample['mu']
         log_var = sample['log_var']
 
@@ -116,13 +106,33 @@ class VaeShipLoss(nn.Module):
         # sample['dau_mask_reconstructed'] = torch.sigmoid(sample['dau_mask_reconstructed'])
 
         # print(sample['dau_mask_reconstructed'][:, :, 0].dtype, sample['dau_mask'].dtype)
+        predicted = (sample['dau_mask_reconstructed'][:, :, 0] >= 0.5).float()
+        target = sample['dau_mask'].float()
         recons_loss = F.binary_cross_entropy(sample['dau_mask_reconstructed'][:, :, 0], sample['dau_mask'].float())
 
+
+
+        recons_loss_regression = 0
+        if self.regression_weight > 0:
+            num_true = torch.sum(target, dim=-1, dtype=torch.int64)
+            num_pred = torch.sum(predicted, dim=-1, dtype=torch.int64)
+
+            true = torch.cat((sample['dau_px'][:, :, np.newaxis], sample['dau_py'][:, :, np.newaxis], sample['dau_pz'][:, :, np.newaxis]), dim=-1)
+            pred = torch.cat((sample['dau_px_reconstructed'], sample['dau_py_reconstructed'], sample['dau_pz_reconstructed']), dim=-1)
+
+            recons_loss_regression = (chamfer_distance(true.cpu(), pred.cpu(), num_true.cpu(), num_pred.cpu(), norm=1))[0].to(predicted.device)
+
+            # recons_loss_regression = np.sum(distance_func(sample['dau_px'], sample['dau_px_reconstructed'][:, :, 0]) + \
+            #     distance_func(sample['dau_py'][:, :, 0], sample['dau_py_reconstructed'][:, :, 0]) + \
+            #     distance_func(sample['dau_pz'][:, :, 0], sample['dau_pz_reconstructed'][:, :, 0]), axis=1)
+            #
+            # recons_loss_regression = np.mean(recons_loss_regression)
+        recons_loss += self.regression_weight * recons_loss_regression
+
+
         # Calculate binary predictions (0 or 1) based on threshold (e.g., 0.5)
-        predicted = (sample['dau_mask_reconstructed'][:, :, 0] >= 0.5).float()
 
         # Convert sample['dau_mask'] to float tensor if necessary (assuming it's not already)
-        target = sample['dau_mask'].float()
 
         # Calculate accuracy
         accuracy = torch.mean((predicted == target).float()).item()
@@ -131,7 +141,7 @@ class VaeShipLoss(nn.Module):
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
         kld_weight = self.kld_weight
-        print("XXX", float(recons_loss), float(kld_loss), float(accuracy))
+        print("XXX", float(recons_loss), float(recons_loss_regression), float(kld_loss), float(accuracy))
 
         loss = recons_loss + kld_weight * kld_loss
 
